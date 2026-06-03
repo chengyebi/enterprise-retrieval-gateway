@@ -1,0 +1,8 @@
+{
+  "user_id": "backend-user-01",
+  "query": "E1027 payment_timeout",
+  "top_k": 5,
+  "project_ids": ["payment"],
+  "document_types": ["incident_report", "runbook"]
+}
+

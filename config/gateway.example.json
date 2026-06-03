@@ -1,0 +1,23 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "opensearch": {
+    "url": "http://localhost:9200",
+    "index": "enterprise_docs",
+    "search_pipeline": "rrf-hybrid-pipeline"
+  },
+  "retrieval": {
+    "top_k_default": 10,
+    "exact_search_threshold": 5,
+    "initial_candidate_limit": 5,
+    "max_candidate_limit": 320,
+    "rank_constant": 60
+  },
+  "embedding": {
+    "model_version": "local-hash-v1",
+    "dimensions": 64
+  }
+}
+

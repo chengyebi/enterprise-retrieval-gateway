@@ -1,0 +1,8 @@
+{
+  "user_id": "finance-user-01",
+  "query": "confidential financial report revenue margin",
+  "top_k": 5,
+  "project_ids": ["finance-core"],
+  "document_types": ["financial_report"]
+}
+

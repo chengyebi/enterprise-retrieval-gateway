@@ -1,0 +1,14 @@
+{
+  "description": "RRF rank fusion pipeline for hybrid retrieval",
+  "phase_results_processors": [
+    {
+      "score-ranker-processor": {
+        "combination": {
+          "technique": "rrf",
+          "rank_constant": 60
+        }
+      }
+    }
+  ]
+}
+

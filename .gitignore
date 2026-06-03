@@ -1,0 +1,17 @@
+build/
+cmake-build-*/
+*.o
+*.a
+*.dylib
+*.so
+*.dSYM/
+ergateway
+test_core
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.pyc
+datasets/generated/
+reports/
+tmp/
+

@@ -1,0 +1,101 @@
+[
+  {
+    "department": "engineering",
+    "groups": [
+      "backend",
+      "employee"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "payment",
+      "search",
+      "security"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "backend-user-01"
+  },
+  {
+    "department": "engineering",
+    "groups": [
+      "sre",
+      "employee"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "payment",
+      "search"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "sre-user-01"
+  },
+  {
+    "department": "finance",
+    "groups": [
+      "finance",
+      "employee"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "finance-core",
+      "enterprise-sales"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "finance-user-01"
+  },
+  {
+    "department": "sales",
+    "groups": [
+      "sales",
+      "employee"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "enterprise-sales"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "sales-user-01"
+  },
+  {
+    "department": "hr",
+    "groups": [
+      "hr",
+      "employee"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "people"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "hr-user-01"
+  },
+  {
+    "department": "engineering",
+    "groups": [
+      "admin",
+      "security"
+    ],
+    "is_admin": true,
+    "project_ids": [
+      "payment",
+      "search",
+      "security",
+      "finance-core",
+      "enterprise-sales",
+      "people"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "admin-user"
+  },
+  {
+    "department": "engineering",
+    "groups": [
+      "intern"
+    ],
+    "is_admin": false,
+    "project_ids": [
+      "sandbox"
+    ],
+    "tenant_id": "tenant-acme",
+    "user_id": "no-access-user"
+  }
+]
