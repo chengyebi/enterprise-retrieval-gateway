@@ -4,7 +4,7 @@
 
 #include "retrieval_gateway/auth/access_context.h"
 #include "retrieval_gateway/auth/acl_filter_builder.h"
-#include "retrieval_gateway/backend/in_memory_opensearch_client.h"
+#include "retrieval_gateway/backend/search_backend.h"
 #include "retrieval_gateway/search/query_plan.h"
 #include "retrieval_gateway/search/search_request.h"
 
@@ -18,7 +18,7 @@ public:
 
     QueryPlan buildPlan(const SearchRequest& request,
                         const AccessContext& access,
-                        const InMemoryOpenSearchClient& backend,
+                        const SearchBackend& backend,
                         const ACLFilterBuilder& acl_builder) const;
 
     bool shouldUseExactSearch(std::size_t estimated_candidates) const;

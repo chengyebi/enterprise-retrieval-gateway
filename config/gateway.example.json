@@ -3,6 +3,7 @@
     "host": "0.0.0.0",
     "port": 8080
   },
+  "backend": "memory",
   "opensearch": {
     "url": "http://localhost:9200",
     "index": "enterprise_docs",
@@ -20,4 +21,3 @@
     "dimensions": 64
   }
 }
-

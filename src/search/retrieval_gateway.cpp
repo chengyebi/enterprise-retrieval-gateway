@@ -21,7 +21,7 @@ std::size_t clampTopK(std::size_t top_k) {
 
 RetrievalGateway::RetrievalGateway(AccessPolicyResolver resolver,
                                    ACLFilterBuilder acl_builder,
-                                   InMemoryOpenSearchClient& backend,
+                                   SearchBackend& backend,
                                    EmbeddingProvider& embedding_provider,
                                    QueryMetricsRecorder& metrics)
     : resolver_(std::move(resolver)),
@@ -147,7 +147,7 @@ SearchResponse RetrievalGateway::search(const SearchRequest& original_request) {
 
 std::string RetrievalGateway::health() const {
     std::ostringstream out;
-    out << "{\"status\":\"ok\",\"backend\":\"in_memory_opensearch\",\"chunks\":" << backend_.chunkCount()
+    out << "{\"status\":\"ok\",\"backend\":\"" << backend_.backendName() << "\",\"chunks\":" << backend_.chunkCount()
         << ",\"documents\":" << backend_.documentCount() << "}";
     return out.str();
 }

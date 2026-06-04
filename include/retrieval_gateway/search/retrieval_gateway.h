@@ -4,7 +4,7 @@
 
 #include "retrieval_gateway/auth/access_policy_resolver.h"
 #include "retrieval_gateway/auth/acl_filter_builder.h"
-#include "retrieval_gateway/backend/in_memory_opensearch_client.h"
+#include "retrieval_gateway/backend/search_backend.h"
 #include "retrieval_gateway/indexing/embedding_provider.h"
 #include "retrieval_gateway/metrics/query_metrics_recorder.h"
 #include "retrieval_gateway/search/filter_aware_query_planner.h"
@@ -19,7 +19,7 @@ class RetrievalGateway {
 public:
     RetrievalGateway(AccessPolicyResolver resolver,
                      ACLFilterBuilder acl_builder,
-                     InMemoryOpenSearchClient& backend,
+                     SearchBackend& backend,
                      EmbeddingProvider& embedding_provider,
                      QueryMetricsRecorder& metrics);
 
@@ -33,7 +33,7 @@ private:
 
     AccessPolicyResolver resolver_;
     ACLFilterBuilder acl_builder_;
-    InMemoryOpenSearchClient& backend_;
+    SearchBackend& backend_;
     EmbeddingProvider& embedding_provider_;
     QueryMetricsRecorder& metrics_;
     FilterAwareQueryPlanner planner_;
@@ -43,4 +43,3 @@ private:
 };
 
 }  // namespace erg
-

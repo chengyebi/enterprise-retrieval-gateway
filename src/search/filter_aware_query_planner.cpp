@@ -13,7 +13,7 @@ FilterAwareQueryPlanner::FilterAwareQueryPlanner(std::size_t exact_search_thresh
 
 QueryPlan FilterAwareQueryPlanner::buildPlan(const SearchRequest& request,
                                              const AccessContext& access,
-                                             const InMemoryOpenSearchClient& backend,
+                                             const SearchBackend& backend,
                                              const ACLFilterBuilder& acl_builder) const {
     QueryPlan plan;
     plan.top_k = request.top_k;

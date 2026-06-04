@@ -1,14 +1,15 @@
 {
-  "description": "RRF rank fusion pipeline for hybrid retrieval",
+  "description": "Score normalization pipeline for OpenSearch 2.14 hybrid retrieval",
   "phase_results_processors": [
     {
-      "score-ranker-processor": {
+      "normalization-processor": {
+        "normalization": {
+          "technique": "min_max"
+        },
         "combination": {
-          "technique": "rrf",
-          "rank_constant": 60
+          "technique": "arithmetic_mean"
         }
       }
     }
   ]
 }
-

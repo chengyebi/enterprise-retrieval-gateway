@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
@@ -111,4 +112,3 @@ bool containsValue(const std::vector<std::string>& values, const std::string& va
 }
 
 }  // namespace erg
-

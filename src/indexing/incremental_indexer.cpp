@@ -1,10 +1,12 @@
 #include "retrieval_gateway/indexing/incremental_indexer.h"
 
+#include <sstream>
+
 #include "retrieval_gateway/common/text.h"
 
 namespace erg {
 
-IncrementalIndexer::IncrementalIndexer(InMemoryOpenSearchClient& backend, EmbeddingProvider& embedding_provider)
+IncrementalIndexer::IncrementalIndexer(SearchBackend& backend, EmbeddingProvider& embedding_provider)
     : backend_(backend), embedding_provider_(embedding_provider) {}
 
 SyncResult IncrementalIndexer::sync(const DocumentChange& change) {
@@ -25,7 +27,15 @@ SyncResult IncrementalIndexer::sync(const DocumentChange& change) {
     chunk.embedding_model_version = embedding_provider_.modelVersion();
     chunk.embedding = embedding_provider_.embed(chunk.title + "\n" + chunk.content);
     const auto result = backend_.bulkUpsert({chunk});
-    return SyncResult{result.ok, result.ok ? "upserted" : "upsert failed", result.indexed};
+    if (result.ok) {
+        return SyncResult{true, "upserted", result.indexed};
+    }
+    std::ostringstream message;
+    message << "upsert failed";
+    for (const auto& error : result.errors) {
+        message << ": " << error;
+    }
+    return SyncResult{false, message.str(), result.indexed};
 }
 
 SyncSummary IncrementalIndexer::bulkSync(const std::vector<DocumentChange>& changes) {
@@ -44,4 +54,3 @@ SyncSummary IncrementalIndexer::bulkSync(const std::vector<DocumentChange>& chan
 }
 
 }  // namespace erg
-

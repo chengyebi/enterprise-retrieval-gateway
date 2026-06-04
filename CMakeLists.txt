@@ -11,6 +11,7 @@ add_library(retrieval_gateway
     src/auth/access_policy_resolver.cpp
     src/auth/acl_filter_builder.cpp
     src/backend/in_memory_opensearch_client.cpp
+    src/backend/opensearch_http_client.cpp
     src/common/demo_data.cpp
     src/common/json_util.cpp
     src/common/text.cpp
@@ -25,12 +26,18 @@ add_library(retrieval_gateway
 )
 
 target_include_directories(retrieval_gateway PUBLIC include)
+if(WIN32)
+    target_link_libraries(retrieval_gateway PUBLIC ws2_32)
+endif()
 
 add_executable(ergateway src/main.cpp)
 target_link_libraries(ergateway PRIVATE retrieval_gateway)
 
 add_executable(test_core tests/unit/test_core.cpp)
 target_link_libraries(test_core PRIVATE retrieval_gateway)
+
+add_executable(test_opensearch_backend tests/integration/test_opensearch_backend.cpp)
+target_link_libraries(test_opensearch_backend PRIVATE retrieval_gateway)
 
 enable_testing()
 add_test(NAME core COMMAND test_core)

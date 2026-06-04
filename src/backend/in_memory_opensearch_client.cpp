@@ -154,6 +154,10 @@ std::size_t InMemoryOpenSearchClient::documentCount() const {
     return ids.size();
 }
 
+std::string InMemoryOpenSearchClient::backendName() const {
+    return "in_memory_opensearch";
+}
+
 SearchHit InMemoryOpenSearchClient::toHit(const DocumentChunk& chunk,
                                           double lexical_score,
                                           double semantic_score,
