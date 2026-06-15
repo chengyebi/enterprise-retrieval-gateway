@@ -18,6 +18,7 @@ export function MetricsPanel({ metrics, onReset }: MetricsPanelProps) {
     ['ACL 累计过滤', String(view.acl_filtered_total)],
     ['静态模式查询', String(view.static_mode_queries)],
     ['本地网关查询', String(view.local_gateway_queries)],
+    ['Supabase 查询', String(view.supabase_fullstack_queries)],
     ['候选扩展比例', `${compactNumber(view.fallback_rate * 100, 1)}%`],
     ['最后查询时间', view.last_query_time ? new Date(view.last_query_time).toLocaleString('zh-CN') : '无'],
   ];

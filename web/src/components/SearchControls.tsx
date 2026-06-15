@@ -14,6 +14,9 @@ interface SearchControlsProps {
   examples: string[];
   isLoading: boolean;
   connection: ConnectionState;
+  userSelectDisabled?: boolean;
+  userLabel?: string;
+  canSearch?: boolean;
   onQueryChange: (value: string) => void;
   onUserChange: (value: string) => void;
   onTopKChange: (value: number) => void;
@@ -70,6 +73,9 @@ export function SearchControls(props: SearchControlsProps) {
     examples,
     isLoading,
     connection,
+    userSelectDisabled = false,
+    userLabel,
+    canSearch = true,
     onQueryChange,
     onUserChange,
     onTopKChange,
@@ -108,14 +114,18 @@ export function SearchControls(props: SearchControlsProps) {
           <label htmlFor="user" className="control-label">
             用户
           </label>
-          <select id="user" value={selectedUserId} onChange={(event) => onUserChange(event.target.value)}>
-            {users.map((user) => (
-              <option key={user.user_id} value={user.user_id}>
-                {user.user_id}
-              </option>
-            ))}
-            <option value="unknown-user">未知用户（unknown-user）</option>
-          </select>
+          {userSelectDisabled ? (
+            <input id="user" value={userLabel ?? selectedUserId} disabled />
+          ) : (
+            <select id="user" value={selectedUserId} onChange={(event) => onUserChange(event.target.value)}>
+              {users.map((user) => (
+                <option key={user.user_id} value={user.user_id}>
+                  {user.user_id}
+                </option>
+              ))}
+              <option value="unknown-user">未知用户（unknown-user）</option>
+            </select>
+          )}
         </section>
 
         <section className="control-block">
@@ -134,7 +144,7 @@ export function SearchControls(props: SearchControlsProps) {
 
       <section className="control-block">
         <div className="control-label">检索模式</div>
-        <div className="segmented-control">
+        <div className="segmented-control mode-control">
           <button
             type="button"
             className={mode === 'static' ? 'selected' : ''}
@@ -148,6 +158,13 @@ export function SearchControls(props: SearchControlsProps) {
             onClick={() => onModeChange('local')}
           >
             本地 C++ 网关
+          </button>
+          <button
+            type="button"
+            className={mode === 'supabase' ? 'selected' : ''}
+            onClick={() => onModeChange('supabase')}
+          >
+            Supabase 全栈
           </button>
         </div>
       </section>
@@ -184,7 +201,7 @@ export function SearchControls(props: SearchControlsProps) {
         onToggle={onDocumentTypeToggle}
       />
 
-      <button type="button" className="primary-button search-button" disabled={isLoading} onClick={onSearch}>
+      <button type="button" className="primary-button search-button" disabled={isLoading || !canSearch} onClick={onSearch}>
         {isLoading ? '检索中...' : '搜索'}
       </button>
     </aside>

@@ -24,6 +24,7 @@ export function AboutPanel() {
           <h2>后端模式</h2>
           <p>
             memory 后端无需 Docker，适合本地演示和测试；OpenSearch 后端用于验证真实索引、BM25、向量检索和混合检索流水线。
+            Supabase 全栈模式用于验证 Auth、Postgres 和 RLS 权限边界。
           </p>
         </article>
       </div>
@@ -31,11 +32,11 @@ export function AboutPanel() {
       <div className="architecture-card">
         <h2>架构图</h2>
         <div className="architecture-flow" aria-label="演示架构图">
-          <div>浏览器界面</div>
+          <div>浏览器界面 / Supabase Auth</div>
           <span>-&gt;</span>
-          <div>静态演示引擎 / 本地 C++ 网关</div>
+          <div>静态演示引擎 / 本地 C++ 网关 / Postgres RPC</div>
           <span>-&gt;</span>
-          <div>ACL 权限过滤</div>
+          <div>C++ ACL / Supabase RLS</div>
           <span>-&gt;</span>
           <div>关键词 / 向量 / 混合规划器</div>
           <span>-&gt;</span>
@@ -50,7 +51,7 @@ export function AboutPanel() {
         </pre>
         <p>
           将检索模式切换为“本地 C++ 网关”，后端地址保持 <code>http://localhost:8080</code>，然后点击“测试连接”。
-          GitHub Pages 版本仍然是纯静态页面，不运行任何后端进程。
+          GitHub Pages 和 Supabase 都不能托管这个 C++ 常驻服务；线上运行 C++ 网关需要另找可运行进程的环境。
         </p>
       </div>
     </section>

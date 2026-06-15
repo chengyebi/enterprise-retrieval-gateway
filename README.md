@@ -26,6 +26,77 @@ Pages 版本是纯静态 B/S Demo：
 - 未知用户按 fail-closed 处理，不返回结果。
 - GitHub Pages 不运行 C++ 后端、Docker、OpenSearch、数据库或任何付费云服务。
 
+## Optional Supabase Fullstack Route
+
+仓库也提供一个可选的 Supabase 全栈骨架，用于验证 Auth、Postgres、RLS 和前端登录会话。入口可以直接访问：
+
+```text
+https://chengyebi.github.io/enterprise-retrieval-gateway/?mode=supabase
+```
+
+本路线包含：
+
+- Supabase Auth：邮箱注册、登录、session 自动恢复和退出。
+- Postgres：`tenants`、`users`、`groups`、`user_groups`、`user_projects`、`auth_user_acl_profiles`、`documents`、`chunks`、`document_acl_groups`、`search_events`。
+- RLS：默认开启并强制 RLS，按 tenant、department、project、groups 过滤文档。
+- 前端：Supabase 登录后进入同一个检索界面，用户身份只读显示为数据库绑定出来的 ACL profile。
+- 检索：Supabase RPC 提供 Postgres/RLS 搜索骨架；真实高质量检索服务仍是 C++ 网关。
+
+安全原则：
+
+- 前端只允许放 `VITE_SUPABASE_ANON_KEY`。`service_role` 绝对不要放进仓库、Vite 环境变量或浏览器代码。
+- 所有业务表默认开启 RLS。
+- 注册/登录只创建 Supabase Auth 用户，不授予任何文档权限。
+- 权限 profile 不能由前端自选。管理员必须在数据库中把 `auth.users.id` 绑定到某个 demo ACL 用户。
+- 未绑定的已登录用户在 RLS 下默认查不到任何文档。
+
+初始化 Supabase schema：
+
+```sh
+# 在 Supabase SQL Editor 或受信任的管理员连接中执行
+supabase/schema.sql
+```
+
+生成 demo seed SQL：
+
+```sh
+python3 scripts/export_supabase_seed.py --output /tmp/erg_supabase_seed.sql
+```
+
+然后在 Supabase SQL Editor 或受信任的管理员连接中执行 `/tmp/erg_supabase_seed.sql`。这个 seed 不会创建 Auth 绑定。
+
+管理员绑定 Auth 用户到 demo ACL 用户：
+
+```sql
+insert into public.auth_user_acl_profiles (auth_user_id, acl_user_id)
+select id, 'backend-user-01'
+from auth.users
+where email = 'demo@example.com';
+```
+
+本地前端启用 Supabase：
+
+```sh
+cd web
+cp .env.example .env
+# 填入 Supabase Project URL 和 anon public key，不要填 service_role
+npm run dev
+```
+
+GitHub Pages 启用 Supabase：
+
+- 在仓库 `Settings -> Secrets and variables -> Actions -> Variables` 添加 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`。
+- 这两个变量会在 Pages workflow 构建时注入。anon key 是浏览器公开 key；不要添加或使用 service_role。
+
+C++ 网关仍然是真实检索服务，可以本地运行：
+
+```sh
+make demo
+./build/ergateway serve --backend memory --port 8080
+```
+
+GitHub Pages 和 Supabase 本身不能托管 C++ 常驻进程。线上如果要跑 C++ 后端，需要部署到能运行进程的环境，例如 VM、容器平台、Fly.io、Render、Railway、Cloud Run 或 Kubernetes，并补齐生产级认证、TLS 和 JWT 校验。
+
 本地前端开发：
 
 ```sh

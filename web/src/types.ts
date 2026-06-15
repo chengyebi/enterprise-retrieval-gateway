@@ -1,4 +1,4 @@
-export type SearchMode = 'static' | 'local';
+export type SearchMode = 'static' | 'local' | 'supabase';
 
 export type AppTab = 'search' | 'debug' | 'metrics' | 'about';
 
@@ -89,6 +89,27 @@ export interface SearchHit {
   visibility_reason: string;
 }
 
+export interface SupabaseAclProfile {
+  auth_user_id: string;
+  acl_user_id: string;
+  tenant_id: string;
+  department: string;
+  groups: string[];
+  project_ids: string[];
+  is_admin: boolean;
+  display_name?: string | null;
+}
+
+export interface SupabaseSearchResponse {
+  ok: boolean;
+  query_id: string;
+  mode: 'supabase_postgres_rls';
+  hits: SearchHit[];
+  debug: QueryDebug;
+  fallback_triggered: boolean;
+  final_candidate_limit: number;
+}
+
 export interface QueryDebug {
   query_id: string;
   current_user: string;
@@ -142,6 +163,7 @@ export interface SessionMetrics {
   acl_filtered_total: number;
   static_mode_queries: number;
   local_gateway_queries: number;
+  supabase_fullstack_queries: number;
   fallback_queries: number;
   last_query_time: string | null;
 }
@@ -155,6 +177,7 @@ export interface MetricsView {
   acl_filtered_total: number;
   static_mode_queries: number;
   local_gateway_queries: number;
+  supabase_fullstack_queries: number;
   last_query_time: string | null;
   fallback_rate: number;
 }

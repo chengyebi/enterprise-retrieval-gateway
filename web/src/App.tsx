@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { searchLocalGateway, fetchQueryDebug, healthCheck } from './api/localGateway';
+import { getSupabaseClient, supabaseConfig } from './api/supabaseClient';
+import { fetchCurrentSupabaseProfile, searchSupabaseDocuments } from './api/supabaseSearch';
 import { AboutPanel } from './components/AboutPanel';
 import { AccessGate } from './components/AccessGate';
 import { DebugPanel } from './components/DebugPanel';
 import { MetricsPanel } from './components/MetricsPanel';
 import { ResultCard } from './components/ResultCard';
 import { SearchControls } from './components/SearchControls';
+import { SupabaseAuthPanel } from './components/SupabaseAuthPanel';
 import { canAccessDocument, findUser } from './lib/acl';
 import { loadDemoData, documentIndexByChunk } from './lib/data';
 import { clearMetrics, loadMetrics, recordQuery } from './lib/metrics';
@@ -20,10 +24,16 @@ import type {
   SearchMode,
   SearchRequest,
   SessionMetrics,
+  SupabaseAclProfile,
 } from './types';
 
 const DEFAULT_BACKEND_URL = 'http://localhost:8080';
 const ACCESS_STORAGE_KEY = 'erg_demo_access_granted';
+
+function initialSearchMode(): SearchMode {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('mode') === 'supabase' ? 'supabase' : 'static';
+}
 
 function makeLocalFailureDebug(
   request: SearchRequest,
@@ -49,6 +59,33 @@ function makeLocalFailureDebug(
     final_candidate_limit: 0,
     retrieval_explanation:
       '本地 C++ 网关未启动，请运行 ./build/ergateway serve --backend memory --port 8080。',
+    error: message,
+  };
+}
+
+function makeSupabaseFailureDebug(
+  request: SearchRequest,
+  latencyMs: number,
+  message: string,
+  totalChunks: number,
+): QueryDebug {
+  return {
+    query_id: `supabase-failed-${Date.now().toString(36)}`,
+    current_user: request.user_id,
+    query: request.query,
+    mode: 'supabase_postgres_rls',
+    top_k: request.top_k,
+    project_filters: request.project_ids,
+    document_type_filters: request.document_types,
+    total_chunks: totalChunks,
+    candidates_before_acl: 0,
+    filtered_by_acl: 0,
+    candidates_after_acl: 0,
+    returned_hits: 0,
+    latency_ms: latencyMs,
+    fallback_triggered: false,
+    final_candidate_limit: 0,
+    retrieval_explanation: 'Supabase 全栈模式需要可用的 Auth session、Postgres schema 和 RLS 函数。',
     error: message,
   };
 }
@@ -134,9 +171,22 @@ function selectedUserSummary(data: DemoData | null, userId: string): string {
   }`;
 }
 
+function selectedSupabaseSummary(profile: SupabaseAclProfile | null, session: Session | null): string {
+  if (!session) {
+    return 'Supabase 未登录';
+  }
+  if (!profile) {
+    return '已登录但未绑定 ACL 用户 -> RLS 默认不返回文档';
+  }
+  return `ACL 用户=${profile.acl_user_id}；租户=${profile.tenant_id}；部门=${profile.department}；用户组=${profile.groups.join(
+    ', ',
+  )}；项目=${profile.project_ids.join(', ')}${profile.is_admin ? '；管理员=true' : ''}`;
+}
+
 export default function App() {
+  const defaultMode = initialSearchMode();
   const [accessGranted, setAccessGranted] = useState(
-    () => window.localStorage.getItem(ACCESS_STORAGE_KEY) === 'true',
+    () => defaultMode === 'supabase' || window.localStorage.getItem(ACCESS_STORAGE_KEY) === 'true',
   );
   const [data, setData] = useState<DemoData | null>(null);
   const [dataError, setDataError] = useState('');
@@ -145,7 +195,7 @@ export default function App() {
   const [topK, setTopK] = useState(5);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [selectedDocumentTypes, setSelectedDocumentTypes] = useState<string[]>([]);
-  const [mode, setMode] = useState<SearchMode>('static');
+  const [mode, setMode] = useState<SearchMode>(defaultMode);
   const [backendUrl, setBackendUrl] = useState(
     () => window.localStorage.getItem('erg_demo_backend_url') || DEFAULT_BACKEND_URL,
   );
@@ -156,6 +206,11 @@ export default function App() {
   const [debug, setDebug] = useState<QueryDebug | null>(null);
   const [searchError, setSearchError] = useState('');
   const [metrics, setMetrics] = useState<SessionMetrics>(() => loadMetrics());
+  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const [supabaseProfile, setSupabaseProfile] = useState<SupabaseAclProfile | null>(null);
+  const [supabaseAuthLoading, setSupabaseAuthLoading] = useState(false);
+  const [supabaseAuthError, setSupabaseAuthError] = useState('');
+  const [supabaseAuthMessage, setSupabaseAuthMessage] = useState('');
 
   useEffect(() => {
     loadDemoData()
@@ -172,6 +227,48 @@ export default function App() {
     window.localStorage.setItem('erg_demo_backend_url', backendUrl);
   }, [backendUrl]);
 
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return undefined;
+    }
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data: sessionData, error }) => {
+      if (!mounted) {
+        return;
+      }
+      if (error) {
+        setSupabaseAuthError(error.message);
+      }
+      setSupabaseSession(sessionData.session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) {
+        return;
+      }
+      setSupabaseSession(session);
+      if (!session) {
+        setSupabaseProfile(null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseSession) {
+      return;
+    }
+    void refreshSupabaseProfile();
+  }, [supabaseSession?.user.id]);
+
   const documentsByChunk = useMemo(() => documentIndexByChunk(data?.documents ?? []), [data]);
   const examples = data?.example_queries?.length
     ? data.example_queries
@@ -186,6 +283,103 @@ export default function App() {
   function logout() {
     window.localStorage.removeItem(ACCESS_STORAGE_KEY);
     setAccessGranted(false);
+  }
+
+  async function refreshSupabaseProfile() {
+    if (!supabaseSession) {
+      setSupabaseProfile(null);
+      return;
+    }
+
+    setSupabaseAuthLoading(true);
+    setSupabaseAuthError('');
+    try {
+      const profile = await fetchCurrentSupabaseProfile();
+      setSupabaseProfile(profile);
+      if (profile) {
+        setSelectedUserId(profile.acl_user_id);
+        setSupabaseAuthMessage('权限 profile 已加载。');
+      } else {
+        setSupabaseAuthMessage('已登录，但管理员尚未绑定 ACL 用户。');
+      }
+    } catch (error) {
+      setSupabaseProfile(null);
+      setSupabaseAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSupabaseAuthLoading(false);
+    }
+  }
+
+  async function signInSupabase(email: string, password: string) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setSupabaseAuthError('Supabase 未配置。');
+      return;
+    }
+
+    setSupabaseAuthLoading(true);
+    setSupabaseAuthError('');
+    setSupabaseAuthMessage('');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        throw error;
+      }
+      setSupabaseAuthMessage('登录成功，正在读取 ACL profile。');
+    } catch (error) {
+      setSupabaseAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSupabaseAuthLoading(false);
+    }
+  }
+
+  async function signUpSupabase(email: string, password: string) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setSupabaseAuthError('Supabase 未配置。');
+      return;
+    }
+
+    setSupabaseAuthLoading(true);
+    setSupabaseAuthError('');
+    setSupabaseAuthMessage('');
+    try {
+      const { data: signupData, error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        throw error;
+      }
+      setSupabaseAuthMessage(
+        signupData.session
+          ? '注册成功。管理员仍需在数据库中绑定 ACL 用户后才会返回文档。'
+          : '注册已提交。如果项目开启邮箱确认，请先完成确认；管理员仍需绑定 ACL 用户。',
+      );
+    } catch (error) {
+      setSupabaseAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSupabaseAuthLoading(false);
+    }
+  }
+
+  async function signOutSupabase() {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return;
+    }
+    setSupabaseAuthLoading(true);
+    setSupabaseAuthError('');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      setSupabaseSession(null);
+      setSupabaseProfile(null);
+      setSupabaseAuthMessage('已退出 Supabase。');
+    } catch (error) {
+      setSupabaseAuthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSupabaseAuthLoading(false);
+    }
   }
 
   async function testConnection() {
@@ -213,7 +407,10 @@ export default function App() {
     }
 
     const request: SearchRequest = {
-      user_id: selectedUserId,
+      user_id:
+        mode === 'supabase'
+          ? supabaseProfile?.acl_user_id ?? `auth:${supabaseSession?.user.id ?? 'anonymous'}`
+          : selectedUserId,
       query: trimmedQuery,
       top_k: topK,
       project_ids: selectedProjects,
@@ -242,6 +439,56 @@ export default function App() {
         }),
       );
       setIsLoading(false);
+      return;
+    }
+
+    if (mode === 'supabase') {
+      if (!supabaseConfig.isConfigured || !supabaseSession) {
+        const message = !supabaseConfig.isConfigured ? 'Supabase 未配置。' : '请先登录 Supabase。';
+        const latency = Math.round(performance.now() - started);
+        setResults([]);
+        setDebug(makeSupabaseFailureDebug(request, latency, message, data.documents.length));
+        setSearchError(message);
+        setActiveTab('debug');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await searchSupabaseDocuments(request, supabaseProfile, data.documents.length);
+        setResults(response.hits);
+        setDebug(response.debug);
+        setActiveTab('search');
+        setMetrics((current) =>
+          recordQuery(current, {
+            ok: response.ok,
+            mode,
+            latency_ms: response.debug.latency_ms,
+            returned_hits: response.hits.length,
+            acl_filtered: response.debug.filtered_by_acl,
+            fallback_triggered: response.fallback_triggered,
+          }),
+        );
+      } catch (error) {
+        const latency = Math.round(performance.now() - started);
+        const message = `Supabase 查询失败：${error instanceof Error ? error.message : String(error)}`;
+        setResults([]);
+        setDebug(makeSupabaseFailureDebug(request, latency, message, data.documents.length));
+        setSearchError(message);
+        setActiveTab('debug');
+        setMetrics((current) =>
+          recordQuery(current, {
+            ok: false,
+            mode,
+            latency_ms: latency,
+            returned_hits: 0,
+            acl_filtered: 0,
+            fallback_triggered: false,
+          }),
+        );
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -325,6 +572,11 @@ export default function App() {
     return <AccessGate onGranted={() => setAccessGranted(true)} />;
   }
 
+  const supabaseUserLabel = !supabaseConfig.isConfigured
+    ? 'Supabase 未配置'
+    : supabaseProfile?.acl_user_id ?? (supabaseSession ? '未绑定 ACL 用户' : '未登录');
+  const canSearch = mode !== 'supabase' || (supabaseConfig.isConfigured && Boolean(supabaseSession));
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -358,36 +610,59 @@ export default function App() {
 
       {activeTab === 'search' && (
         <div className="search-layout">
-          <SearchControls
-            query={query}
-            users={data?.users ?? []}
-            selectedUserId={selectedUserId}
-            topK={topK}
-            projects={data?.projects ?? []}
-            selectedProjects={selectedProjects}
-            documentTypes={data?.document_types ?? []}
-            selectedDocumentTypes={selectedDocumentTypes}
-            mode={mode}
-            backendUrl={backendUrl}
-            examples={examples}
-            isLoading={isLoading}
-            connection={connection}
-            onQueryChange={setQuery}
-            onUserChange={setSelectedUserId}
-            onTopKChange={setTopK}
-            onProjectToggle={(value) => setSelectedProjects((current) => toggleValue(current, value))}
-            onDocumentTypeToggle={(value) => setSelectedDocumentTypes((current) => toggleValue(current, value))}
-            onModeChange={setMode}
-            onBackendUrlChange={setBackendUrl}
-            onSearch={runSearch}
-            onTestConnection={testConnection}
-          />
+          <div className="control-stack">
+            {mode === 'supabase' && (
+              <SupabaseAuthPanel
+                configured={supabaseConfig.isConfigured}
+                session={supabaseSession}
+                profile={supabaseProfile}
+                isLoading={supabaseAuthLoading}
+                error={supabaseAuthError}
+                message={supabaseAuthMessage}
+                onSignIn={signInSupabase}
+                onSignUp={signUpSupabase}
+                onSignOut={signOutSupabase}
+                onRefreshProfile={refreshSupabaseProfile}
+              />
+            )}
+            <SearchControls
+              query={query}
+              users={data?.users ?? []}
+              selectedUserId={selectedUserId}
+              topK={topK}
+              projects={data?.projects ?? []}
+              selectedProjects={selectedProjects}
+              documentTypes={data?.document_types ?? []}
+              selectedDocumentTypes={selectedDocumentTypes}
+              mode={mode}
+              backendUrl={backendUrl}
+              examples={examples}
+              isLoading={isLoading}
+              connection={connection}
+              userSelectDisabled={mode === 'supabase'}
+              userLabel={supabaseUserLabel}
+              canSearch={canSearch}
+              onQueryChange={setQuery}
+              onUserChange={setSelectedUserId}
+              onTopKChange={setTopK}
+              onProjectToggle={(value) => setSelectedProjects((current) => toggleValue(current, value))}
+              onDocumentTypeToggle={(value) => setSelectedDocumentTypes((current) => toggleValue(current, value))}
+              onModeChange={setMode}
+              onBackendUrlChange={setBackendUrl}
+              onSearch={runSearch}
+              onTestConnection={testConnection}
+            />
+          </div>
 
           <section className="results-panel">
             <div className="panel-toolbar">
               <div>
                 <h2>检索结果</h2>
-                <p>{selectedUserSummary(data, selectedUserId)}</p>
+                <p>
+                  {mode === 'supabase'
+                    ? selectedSupabaseSummary(supabaseProfile, supabaseSession)
+                    : selectedUserSummary(data, selectedUserId)}
+                </p>
               </div>
               <span className="status-pill healthy">{results.length} 条结果</span>
             </div>
@@ -395,7 +670,9 @@ export default function App() {
             {!data && !dataError && <div className="empty-state">正在加载演示数据...</div>}
             {data && results.length === 0 && !searchError && (
               <div className="empty-state">
-                当前用户没有可见结果。可以切换用户，或打开“调试”查看 ACL 过滤数量。
+                {mode === 'supabase'
+                  ? '当前 Supabase 用户没有可见结果。未绑定 ACL 用户时这是 RLS 的默认安全结果；已绑定用户可以调整查询或过滤条件。'
+                  : '当前用户没有可见结果。可以切换用户，或打开“调试”查看 ACL 过滤数量。'}
               </div>
             )}
             <div className="result-list">

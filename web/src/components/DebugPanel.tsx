@@ -16,6 +16,7 @@ function formatMode(mode: string): string {
   const labels: Record<string, string> = {
     static_browser_planner_acl: '静态浏览器规划器 + 权限过滤',
     local_cpp_gateway: '本地 C++ 网关',
+    supabase_postgres_rls: 'Supabase Postgres + RLS',
     hybrid_iterative_expansion: '混合检索 + 候选扩展',
     filtered_exact_vector: '过滤后精确向量检索',
     hybrid: '混合检索',

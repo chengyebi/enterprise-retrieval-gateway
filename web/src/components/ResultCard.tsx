@@ -13,6 +13,7 @@ function sourceLabel(source?: string): string {
   const labels: Record<string, string> = {
     'static-browser': '静态浏览器',
     'local-cpp-gateway': '本地 C++ 网关',
+    'supabase-postgres-rls': 'Supabase RLS',
     hybrid: '混合检索',
     keyword: '关键词检索',
     vector: '向量检索',

@@ -12,6 +12,7 @@ export function emptyMetrics(): SessionMetrics {
     acl_filtered_total: 0,
     static_mode_queries: 0,
     local_gateway_queries: 0,
+    supabase_fullstack_queries: 0,
     fallback_queries: 0,
     last_query_time: null,
   };
@@ -60,6 +61,7 @@ export function recordQuery(
     acl_filtered_total: metrics.acl_filtered_total + Math.max(0, input.acl_filtered),
     static_mode_queries: metrics.static_mode_queries + (input.mode === 'static' ? 1 : 0),
     local_gateway_queries: metrics.local_gateway_queries + (input.mode === 'local' ? 1 : 0),
+    supabase_fullstack_queries: metrics.supabase_fullstack_queries + (input.mode === 'supabase' ? 1 : 0),
     fallback_queries: metrics.fallback_queries + (input.fallback_triggered ? 1 : 0),
     last_query_time: new Date().toISOString(),
   };
@@ -78,6 +80,7 @@ export function metricsView(metrics: SessionMetrics): MetricsView {
     acl_filtered_total: metrics.acl_filtered_total,
     static_mode_queries: metrics.static_mode_queries,
     local_gateway_queries: metrics.local_gateway_queries,
+    supabase_fullstack_queries: metrics.supabase_fullstack_queries,
     last_query_time: metrics.last_query_time,
     fallback_rate: total > 0 ? metrics.fallback_queries / total : 0,
   };
