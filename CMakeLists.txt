@@ -10,6 +10,7 @@ add_library(retrieval_gateway
     src/api/request_mapper.cpp
     src/auth/access_policy_resolver.cpp
     src/auth/acl_filter_builder.cpp
+    src/auth/supabase_auth.cpp
     src/backend/in_memory_opensearch_client.cpp
     src/backend/opensearch_http_client.cpp
     src/common/demo_data.cpp
@@ -26,6 +27,8 @@ add_library(retrieval_gateway
 )
 
 target_include_directories(retrieval_gateway PUBLIC include)
+find_package(OpenSSL REQUIRED)
+target_link_libraries(retrieval_gateway PUBLIC OpenSSL::Crypto)
 if(WIN32)
     target_link_libraries(retrieval_gateway PUBLIC ws2_32)
 endif()

@@ -1,10 +1,15 @@
 #include "retrieval_gateway/api/http_server.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -90,9 +95,53 @@ std::string requestLine(const std::string& request_text) {
     return request_text.substr(0, pos);
 }
 
+std::map<std::string, std::string> requestHeaders(const std::string& request_text) {
+    std::map<std::string, std::string> headers;
+    std::istringstream stream(request_text);
+    std::string line;
+    bool first = true;
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (first) {
+            first = false;
+            continue;
+        }
+        if (line.empty()) {
+            break;
+        }
+        const auto colon = line.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+        std::string key = line.substr(0, colon);
+        std::string value = line.substr(colon + 1);
+        key.erase(std::remove_if(key.begin(), key.end(), [](unsigned char c) { return std::isspace(c); }), key.end());
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
+            value.erase(value.begin());
+        }
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+            value.pop_back();
+        }
+        headers[key] = value;
+    }
+    return headers;
+}
+
+std::string headerValue(const std::map<std::string, std::string>& headers, const std::string& name) {
+    const auto it = headers.find(name);
+    if (it == headers.end()) {
+        return "";
+    }
+    return it->second;
+}
+
 }  // namespace
 
-HttpServer::HttpServer(RetrievalGateway& gateway) : gateway_(gateway) {}
+HttpServer::HttpServer(RetrievalGateway& gateway, SupabaseAuthManager supabase_auth)
+    : gateway_(gateway), supabase_auth_(std::move(supabase_auth)) {}
 
 int HttpServer::serve(uint16_t port) {
     ensureSocketRuntime();
@@ -146,6 +195,7 @@ int HttpServer::serve(uint16_t port) {
 
 std::string HttpServer::handleRequest(const std::string& request_text) {
     const std::string line = requestLine(request_text);
+    const auto headers = requestHeaders(request_text);
     if (line.find("OPTIONS ") == 0) {
         return httpResponse("204 No Content", "");
     }
@@ -156,7 +206,19 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse("200 OK", metricsToJson(gateway_.metrics()));
     }
     if (line.find("POST /v1/search ") == 0) {
-        const auto request = searchRequestFromJson(requestBody(request_text));
+        auto request = searchRequestFromJson(requestBody(request_text));
+        const std::string authorization = headerValue(headers, "authorization");
+        if (supabase_auth_.enabled()) {
+            if (!authorization.empty()) {
+                const SupabaseAuthResult auth = supabase_auth_.resolveBearerToken(authorization);
+                if (!auth.ok) {
+                    return httpResponse("401 Unauthorized", "{\"error\":\"" + jsonEscape(auth.error) + "\"}");
+                }
+                request.user_id = auth.acl_user_id;
+            } else if (supabase_auth_.settings().require_auth) {
+                return httpResponse("401 Unauthorized", "{\"error\":\"missing Bearer authorization header\"}");
+            }
+        }
         const auto response = gateway_.search(request);
         return httpResponse(response.ok ? "200 OK" : "403 Forbidden", searchResponseToJson(response));
     }

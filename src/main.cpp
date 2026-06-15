@@ -1,11 +1,14 @@
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "retrieval_gateway/api/http_server.h"
+#include "retrieval_gateway/auth/supabase_auth.h"
 #include "retrieval_gateway/backend/in_memory_opensearch_client.h"
 #include "retrieval_gateway/backend/opensearch_http_client.h"
 #include "retrieval_gateway/common/demo_data.h"
@@ -23,6 +26,11 @@ struct BackendSettings {
     std::string opensearch_url{"http://localhost:9200"};
     std::string opensearch_index{"enterprise_docs"};
     bool seed_demo{false};
+};
+
+struct SupabaseAuthSettingsInput {
+    SupabaseAuthSettings settings;
+    std::string bindings_file;
 };
 
 struct App {
@@ -72,6 +80,14 @@ std::string flagValue(int argc, char** argv, const std::string& name, const std:
     return default_value;
 }
 
+std::string envValue(const char* name, const std::string& default_value) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || std::string(value).empty()) {
+        return default_value;
+    }
+    return std::string(value);
+}
+
 bool hasFlag(int argc, char** argv, const std::string& name) {
     for (int i = 0; i < argc; ++i) {
         if (argv[i] == name) {
@@ -100,6 +116,18 @@ BackendSettings backendSettings(int argc, char** argv) {
     return settings;
 }
 
+SupabaseAuthSettingsInput supabaseAuthSettings(int argc, char** argv) {
+    SupabaseAuthSettingsInput input;
+    input.settings.jwt_secret = flagValue(argc, argv, "--supabase-jwt-secret", envValue("SUPABASE_JWT_SECRET", ""));
+    input.settings.expected_audience = flagValue(
+        argc, argv, "--supabase-jwt-audience", envValue("SUPABASE_JWT_AUDIENCE", "authenticated"));
+    input.settings.expected_issuer = flagValue(argc, argv, "--supabase-jwt-issuer", envValue("SUPABASE_JWT_ISSUER", ""));
+    input.settings.require_auth = hasFlag(argc, argv, "--require-supabase-auth") ||
+                                  envValue("SUPABASE_REQUIRE_AUTH", "false") == "true";
+    input.bindings_file = flagValue(argc, argv, "--supabase-bindings-file", envValue("SUPABASE_BINDINGS_FILE", ""));
+    return input;
+}
+
 void printUsage() {
     std::cout << "EnterpriseRetrievalGateway\n"
               << "Usage:\n"
@@ -111,6 +139,11 @@ void printUsage() {
               << "  --opensearch-url http://localhost:9200\n"
               << "  --opensearch-index enterprise_docs\n"
               << "  --seed-demo  upsert the small built-in demo corpus into the selected backend\n";
+    std::cout << "  --supabase-jwt-secret <secret>\n"
+              << "  --supabase-jwt-audience authenticated\n"
+              << "  --supabase-jwt-issuer https://<project>.supabase.co/auth/v1\n"
+              << "  --supabase-bindings-file auth_bindings.json\n"
+              << "  --require-supabase-auth\n";
 }
 
 void runDemo(RetrievalGateway& gateway) {
@@ -171,7 +204,20 @@ int main(int argc, char** argv) {
 
     if (command == "serve") {
         const auto port = static_cast<uint16_t>(std::stoul(flagValue(argc, argv, "--port", "8080")));
-        HttpServer server(gateway);
+        const SupabaseAuthSettingsInput auth_input = supabaseAuthSettings(argc, argv);
+        SupabaseAuthBindings bindings;
+        if (!auth_input.bindings_file.empty()) {
+            bindings = SupabaseAuthBindings::fromFile(auth_input.bindings_file);
+        }
+        if (auth_input.settings.require_auth) {
+            if (auth_input.settings.jwt_secret.empty()) {
+                throw std::runtime_error("SUPABASE_JWT_SECRET is required when --require-supabase-auth is set");
+            }
+            if (bindings.empty()) {
+                throw std::runtime_error("Supabase auth bindings are required when --require-supabase-auth is set");
+            }
+        }
+        HttpServer server(gateway, SupabaseAuthManager(auth_input.settings, std::move(bindings)));
         return server.serve(port);
     }
 

@@ -2,9 +2,17 @@ CXX ?= c++
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS := -Iinclude
 LDLIBS ?=
+OPENSSL_PREFIX ?= $(shell brew --prefix openssl@3 2>/dev/null)
+
+ifneq ($(wildcard $(OPENSSL_PREFIX)/include/openssl/crypto.h),)
+CPPFLAGS += -I$(OPENSSL_PREFIX)/include
+LDLIBS += -L$(OPENSSL_PREFIX)/lib
+endif
 
 ifeq ($(OS),Windows_NT)
 LDLIBS += -lws2_32
+else
+LDLIBS += -lcrypto
 endif
 
 LIB_SRCS := \
@@ -12,6 +20,7 @@ LIB_SRCS := \
 	src/api/request_mapper.cpp \
 	src/auth/access_policy_resolver.cpp \
 	src/auth/acl_filter_builder.cpp \
+	src/auth/supabase_auth.cpp \
 	src/backend/in_memory_opensearch_client.cpp \
 	src/backend/opensearch_http_client.cpp \
 	src/common/demo_data.cpp \

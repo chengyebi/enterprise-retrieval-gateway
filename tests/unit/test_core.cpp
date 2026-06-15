@@ -5,6 +5,7 @@
 
 #include "retrieval_gateway/auth/access_policy_resolver.h"
 #include "retrieval_gateway/auth/acl_filter_builder.h"
+#include "retrieval_gateway/auth/supabase_auth.h"
 #include "retrieval_gateway/backend/in_memory_opensearch_client.h"
 #include "retrieval_gateway/common/demo_data.h"
 #include "retrieval_gateway/indexing/incremental_indexer.h"
@@ -180,6 +181,29 @@ void testMetricsAndDebugTrace() {
     require(trace->acl_filter_summary.find("tenant=tenant-acme") != std::string::npos, "trace should record ACL summary");
 }
 
+void testSupabaseJwtBinding() {
+    const std::string token =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiJhdXRoLXVzZXItMSIsImF1ZCI6ImF1dGhlbnRpY2F0ZWQiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJleHAiOjIwMDAwMDAwMDB9."
+        "IDxK49S3f2_KLr8LoP86MVQ71A78vbmMaiuvPxDbHJQ";
+
+    SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-1":"backend-user-01"})");
+    SupabaseAuthSettings settings;
+    settings.jwt_secret = "test-secret";
+    settings.expected_audience = "authenticated";
+    settings.expected_issuer = "";
+    SupabaseAuthManager auth(settings, bindings);
+    const auto result = auth.resolveBearerToken("Bearer " + token);
+    require(result.ok, "valid supabase jwt should resolve");
+    require(result.auth_user_id == "auth-user-1", "jwt subject should be preserved");
+    require(result.acl_user_id == "backend-user-01", "binding should map auth user to ACL user");
+
+    AccessPolicyResolver resolver = AccessPolicyResolver::demo();
+    const auto access = auth.accessContextForBearerToken("Bearer " + token, resolver);
+    require(access.user_id == "backend-user-01", "resolved access context should use bound ACL user");
+    require(access.department == "engineering", "resolved ACL user should come from demo resolver");
+}
+
 }  // namespace
 
 int main() {
@@ -188,7 +212,7 @@ int main() {
     testPlannerBranches();
     testIncrementalIndexer();
     testMetricsAndDebugTrace();
+    testSupabaseJwtBinding();
     std::cout << "core tests passed\n";
     return 0;
 }
-

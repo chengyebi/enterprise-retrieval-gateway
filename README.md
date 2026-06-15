@@ -97,6 +97,24 @@ make demo
 
 GitHub Pages 和 Supabase 本身不能托管 C++ 常驻进程。线上如果要跑 C++ 后端，需要部署到能运行进程的环境，例如 VM、容器平台、Fly.io、Render、Railway、Cloud Run 或 Kubernetes，并补齐生产级认证、TLS 和 JWT 校验。
 
+C++ 网关对接 Supabase JWT：
+
+```sh
+./build/ergateway serve \
+  --backend memory \
+  --port 8080 \
+  --supabase-jwt-secret "$SUPABASE_JWT_SECRET" \
+  --supabase-jwt-audience authenticated \
+  --supabase-jwt-issuer "https://<project>.supabase.co/auth/v1" \
+  --supabase-bindings-file supabase/auth-bindings.example.json \
+  --require-supabase-auth
+```
+
+- `--supabase-jwt-secret` 用来验证 Supabase Access Token 的 HS256 签名。
+- `--supabase-bindings-file` 是 auth.users.id 到 demo ACL 用户的本地绑定表，格式是一个扁平 JSON object。
+- `--require-supabase-auth` 会让缺少或校验失败的 Bearer token 直接返回 `401`。
+- 没有启用这组参数时，C++ 网关仍保持原来的本地 demo 行为。
+
 本地前端开发：
 
 ```sh
