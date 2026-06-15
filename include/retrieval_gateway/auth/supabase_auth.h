@@ -12,6 +12,7 @@ namespace erg {
 
 struct SupabaseAuthSettings {
     std::string jwt_secret;
+    std::string jwks_json;
     std::string expected_audience{"authenticated"};
     std::string expected_issuer;
     bool require_auth{false};

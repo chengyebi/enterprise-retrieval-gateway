@@ -204,6 +204,27 @@ void testSupabaseJwtBinding() {
     require(access.department == "engineering", "resolved ACL user should come from demo resolver");
 }
 
+void testSupabaseEs256JwksBinding() {
+    const std::string token =
+        "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3QtZXMyNTYta2V5In0."
+        "eyJzdWIiOiJhdXRoLXVzZXItZXMyNTYiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiaXNzIjoiaHR0cHM6Ly9leGFtcGxlLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJlbWFpbCI6ImVzMjU2QGV4YW1wbGUuY29tIiwiZXhwIjo0MTAyNDQ0ODAwfQ."
+        "LL6fMF3YWofWWJAfrW3ip-2MkpHWng3Z2Dhxo_9tU-HRjHpN72PC7NjnS3bdX42kPuKYPSgmXeQ-UIXvl2EAjA";
+    const std::string jwks_json =
+        R"({"keys":[{"kty":"EC","x":"MHT4raYf-RIEDUNfe8-mZ83LnyJ6LvKGLo4-t4_zWVs","y":"vIajt8erh4hf1DofGoFC0eUEHY9qDS4hqL_snpPiqeI","crv":"P-256","kid":"test-es256-key","alg":"ES256","use":"sig"}]})";
+
+    SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-es256":"sre-user-01"})");
+    SupabaseAuthSettings settings;
+    settings.jwks_json = jwks_json;
+    settings.expected_audience = "authenticated";
+    settings.expected_issuer = "https://example.supabase.co/auth/v1";
+    SupabaseAuthManager auth(settings, bindings);
+    const auto result = auth.resolveBearerToken("Bearer " + token);
+    require(result.ok, "valid ES256 supabase jwt should resolve");
+    require(result.auth_user_id == "auth-user-es256", "ES256 jwt subject should be preserved");
+    require(result.email == "es256@example.com", "ES256 jwt email should be preserved");
+    require(result.acl_user_id == "sre-user-01", "ES256 binding should map auth user to ACL user");
+}
+
 }  // namespace
 
 int main() {
@@ -213,6 +234,7 @@ int main() {
     testIncrementalIndexer();
     testMetricsAndDebugTrace();
     testSupabaseJwtBinding();
+    testSupabaseEs256JwksBinding();
     std::cout << "core tests passed\n";
     return 0;
 }

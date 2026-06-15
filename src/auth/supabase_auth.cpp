@@ -14,8 +14,12 @@
 #include <vector>
 
 #include <openssl/crypto.h>
+#include <openssl/bn.h>
+#include <openssl/ecdsa.h>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
+#include <openssl/core_names.h>
+#include <openssl/param_build.h>
 
 #include "retrieval_gateway/auth/access_policy_resolver.h"
 #include "retrieval_gateway/common/json_util.h"
@@ -23,6 +27,12 @@
 namespace erg {
 
 namespace {
+
+struct EcJwk {
+    std::string kid;
+    std::string x;
+    std::string y;
+};
 
 std::string trim(const std::string& value) {
     const auto left = value.find_first_not_of(" \t\r\n");
@@ -77,6 +87,134 @@ std::vector<unsigned char> hmacSha256(const std::string& secret, const std::stri
          &length);
     digest.resize(length);
     return digest;
+}
+
+std::optional<std::string> extractJwkString(const std::string& object_json, const std::string& key) {
+    const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+    std::smatch match;
+    if (std::regex_search(object_json, match, pattern) && match.size() > 1) {
+        return match[1].str();
+    }
+    return std::nullopt;
+}
+
+std::optional<EcJwk> findEcJwk(const std::string& jwks_json, const std::string& kid) {
+    static const std::regex object_pattern("\\{[^{}]*\"kty\"\\s*:\\s*\"EC\"[^{}]*\\}");
+    for (std::sregex_iterator it(jwks_json.begin(), jwks_json.end(), object_pattern), end; it != end; ++it) {
+        const std::string object_json = it->str();
+        const auto alg = extractJwkString(object_json, "alg");
+        const auto crv = extractJwkString(object_json, "crv");
+        const auto object_kid = extractJwkString(object_json, "kid");
+        const auto x = extractJwkString(object_json, "x");
+        const auto y = extractJwkString(object_json, "y");
+        if (!x || !y || (alg && *alg != "ES256") || (crv && *crv != "P-256")) {
+            continue;
+        }
+        if (!kid.empty() && object_kid && *object_kid != kid) {
+            continue;
+        }
+        if (!kid.empty() && !object_kid) {
+            continue;
+        }
+        return EcJwk{object_kid.value_or(""), *x, *y};
+    }
+    return std::nullopt;
+}
+
+std::optional<std::vector<unsigned char>> es256DerSignature(const std::vector<unsigned char>& raw_signature) {
+    if (raw_signature.size() != 64) {
+        return std::nullopt;
+    }
+    BIGNUM* r = BN_bin2bn(raw_signature.data(), 32, nullptr);
+    BIGNUM* s = BN_bin2bn(raw_signature.data() + 32, 32, nullptr);
+    if (r == nullptr || s == nullptr) {
+        BN_free(r);
+        BN_free(s);
+        return std::nullopt;
+    }
+    ECDSA_SIG* signature = ECDSA_SIG_new();
+    if (signature == nullptr || ECDSA_SIG_set0(signature, r, s) != 1) {
+        BN_free(r);
+        BN_free(s);
+        ECDSA_SIG_free(signature);
+        return std::nullopt;
+    }
+
+    const int der_size = i2d_ECDSA_SIG(signature, nullptr);
+    if (der_size <= 0) {
+        ECDSA_SIG_free(signature);
+        return std::nullopt;
+    }
+    std::vector<unsigned char> der(static_cast<std::size_t>(der_size));
+    unsigned char* cursor = der.data();
+    if (i2d_ECDSA_SIG(signature, &cursor) != der_size) {
+        ECDSA_SIG_free(signature);
+        return std::nullopt;
+    }
+    ECDSA_SIG_free(signature);
+    return der;
+}
+
+std::optional<std::vector<unsigned char>> p256PublicKeyBytes(const EcJwk& jwk) {
+    const auto x = base64UrlDecode(jwk.x);
+    const auto y = base64UrlDecode(jwk.y);
+    if (x.size() != 32 || y.size() != 32) {
+        return std::nullopt;
+    }
+    std::vector<unsigned char> public_key;
+    public_key.reserve(65);
+    public_key.push_back(0x04);
+    public_key.insert(public_key.end(), x.begin(), x.end());
+    public_key.insert(public_key.end(), y.begin(), y.end());
+    return public_key;
+}
+
+bool verifyEs256(const std::string& jwks_json,
+                 const std::string& kid,
+                 const std::string& message,
+                 const std::vector<unsigned char>& raw_signature) {
+    const auto jwk = findEcJwk(jwks_json, kid);
+    if (!jwk) {
+        return false;
+    }
+    const auto public_key_bytes = p256PublicKeyBytes(*jwk);
+    const auto der_signature = es256DerSignature(raw_signature);
+    if (!public_key_bytes || !der_signature) {
+        return false;
+    }
+
+    EVP_PKEY_CTX* pkey_context = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
+    if (pkey_context == nullptr) {
+        return false;
+    }
+    EVP_PKEY* pkey = nullptr;
+    OSSL_PARAM_BLD* params_builder = OSSL_PARAM_BLD_new();
+    bool ok = false;
+    if (params_builder != nullptr &&
+        OSSL_PARAM_BLD_push_utf8_string(params_builder, OSSL_PKEY_PARAM_GROUP_NAME, "prime256v1", 0) == 1 &&
+        OSSL_PARAM_BLD_push_octet_string(params_builder,
+                                         OSSL_PKEY_PARAM_PUB_KEY,
+                                         public_key_bytes->data(),
+                                         public_key_bytes->size()) == 1) {
+        OSSL_PARAM* params = OSSL_PARAM_BLD_to_param(params_builder);
+        if (params != nullptr &&
+            EVP_PKEY_fromdata_init(pkey_context) == 1 &&
+            EVP_PKEY_fromdata(pkey_context, &pkey, EVP_PKEY_PUBLIC_KEY, params) == 1) {
+            EVP_MD_CTX* verify_context = EVP_MD_CTX_new();
+            if (verify_context != nullptr &&
+                EVP_DigestVerifyInit(verify_context, nullptr, EVP_sha256(), nullptr, pkey) == 1 &&
+                EVP_DigestVerifyUpdate(verify_context, message.data(), message.size()) == 1 &&
+                EVP_DigestVerifyFinal(verify_context, der_signature->data(), der_signature->size()) == 1) {
+                ok = true;
+            }
+            EVP_MD_CTX_free(verify_context);
+        }
+        OSSL_PARAM_free(params);
+    }
+    OSSL_PARAM_BLD_free(params_builder);
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(pkey_context);
+    return ok;
 }
 
 std::optional<std::string> extractHeaderValue(const std::string& authorization_header) {
@@ -159,7 +297,7 @@ SupabaseAuthManager::SupabaseAuthManager(SupabaseAuthSettings settings, Supabase
     : settings_(std::move(settings)), bindings_(std::move(bindings)) {}
 
 bool SupabaseAuthManager::enabled() const {
-    return !settings_.jwt_secret.empty();
+    return !settings_.jwt_secret.empty() || !settings_.jwks_json.empty();
 }
 
 const SupabaseAuthSettings& SupabaseAuthManager::settings() const {
@@ -194,14 +332,26 @@ SupabaseAuthResult SupabaseAuthManager::resolveBearerToken(const std::string& au
     const std::string header_json(header_bytes.begin(), header_bytes.end());
     const std::string payload_json(payload_bytes.begin(), payload_bytes.end());
     const std::string alg = extractJsonString(header_json, "alg");
-    if (alg != "HS256") {
+    const std::string signed_message = *header_part + "." + *payload_part;
+    if (alg == "HS256") {
+        if (settings_.jwt_secret.empty()) {
+            return fail("HS256 JWT secret is not configured");
+        }
+        const auto expected_signature = hmacSha256(settings_.jwt_secret, signed_message);
+        if (expected_signature.size() != signature_bytes.size() ||
+            CRYPTO_memcmp(expected_signature.data(), signature_bytes.data(), signature_bytes.size()) != 0) {
+            return fail("JWT signature verification failed");
+        }
+    } else if (alg == "ES256") {
+        if (settings_.jwks_json.empty()) {
+            return fail("ES256 JWKS is not configured");
+        }
+        const std::string kid = extractJsonString(header_json, "kid");
+        if (!verifyEs256(settings_.jwks_json, kid, signed_message, signature_bytes)) {
+            return fail("JWT signature verification failed");
+        }
+    } else {
         return fail("unsupported JWT algorithm: " + alg);
-    }
-
-    const auto expected_signature = hmacSha256(settings_.jwt_secret, *header_part + "." + *payload_part);
-    if (expected_signature.size() != signature_bytes.size() ||
-        CRYPTO_memcmp(expected_signature.data(), signature_bytes.data(), signature_bytes.size()) != 0) {
-        return fail("JWT signature verification failed");
     }
 
     const std::string sub = extractJsonString(payload_json, "sub");

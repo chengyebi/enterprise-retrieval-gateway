@@ -1,9 +1,11 @@
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,16 @@ std::string envValue(const char* name, const std::string& default_value) {
     return std::string(value);
 }
 
+std::string readTextFile(const std::string& path) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("failed to open file: " + path);
+    }
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
 bool hasFlag(int argc, char** argv, const std::string& name) {
     for (int i = 0; i < argc; ++i) {
         if (argv[i] == name) {
@@ -119,6 +131,11 @@ BackendSettings backendSettings(int argc, char** argv) {
 SupabaseAuthSettingsInput supabaseAuthSettings(int argc, char** argv) {
     SupabaseAuthSettingsInput input;
     input.settings.jwt_secret = flagValue(argc, argv, "--supabase-jwt-secret", envValue("SUPABASE_JWT_SECRET", ""));
+    input.settings.jwks_json = flagValue(argc, argv, "--supabase-jwks-json", envValue("SUPABASE_JWKS_JSON", ""));
+    const std::string jwks_file = flagValue(argc, argv, "--supabase-jwks-file", envValue("SUPABASE_JWKS_FILE", ""));
+    if (input.settings.jwks_json.empty() && !jwks_file.empty()) {
+        input.settings.jwks_json = readTextFile(jwks_file);
+    }
     input.settings.expected_audience = flagValue(
         argc, argv, "--supabase-jwt-audience", envValue("SUPABASE_JWT_AUDIENCE", "authenticated"));
     input.settings.expected_issuer = flagValue(argc, argv, "--supabase-jwt-issuer", envValue("SUPABASE_JWT_ISSUER", ""));
@@ -140,6 +157,8 @@ void printUsage() {
               << "  --opensearch-index enterprise_docs\n"
               << "  --seed-demo  upsert the small built-in demo corpus into the selected backend\n";
     std::cout << "  --supabase-jwt-secret <secret>\n"
+              << "  --supabase-jwks-file jwks.json\n"
+              << "  --supabase-jwks-json '{...}'\n"
               << "  --supabase-jwt-audience authenticated\n"
               << "  --supabase-jwt-issuer https://<project>.supabase.co/auth/v1\n"
               << "  --supabase-bindings-file auth_bindings.json\n"
@@ -210,8 +229,9 @@ int main(int argc, char** argv) {
             bindings = SupabaseAuthBindings::fromFile(auth_input.bindings_file);
         }
         if (auth_input.settings.require_auth) {
-            if (auth_input.settings.jwt_secret.empty()) {
-                throw std::runtime_error("SUPABASE_JWT_SECRET is required when --require-supabase-auth is set");
+            if (auth_input.settings.jwt_secret.empty() && auth_input.settings.jwks_json.empty()) {
+                throw std::runtime_error(
+                    "SUPABASE_JWT_SECRET or SUPABASE_JWKS_FILE is required when --require-supabase-auth is set");
             }
             if (bindings.empty()) {
                 throw std::runtime_error("Supabase auth bindings are required when --require-supabase-auth is set");
