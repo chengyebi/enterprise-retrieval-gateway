@@ -85,7 +85,7 @@ export function SearchControls(props: SearchControlsProps) {
     <aside className="control-panel">
       <section className="control-block">
         <label htmlFor="query" className="control-label">
-          Query
+          查询
         </label>
         <textarea
           id="query"
@@ -106,7 +106,7 @@ export function SearchControls(props: SearchControlsProps) {
       <div className="control-grid">
         <section className="control-block">
           <label htmlFor="user" className="control-label">
-            User
+            用户
           </label>
           <select id="user" value={selectedUserId} onChange={(event) => onUserChange(event.target.value)}>
             {users.map((user) => (
@@ -114,13 +114,13 @@ export function SearchControls(props: SearchControlsProps) {
                 {user.user_id}
               </option>
             ))}
-            <option value="unknown-user">unknown-user</option>
+            <option value="unknown-user">未知用户（unknown-user）</option>
           </select>
         </section>
 
         <section className="control-block">
           <label htmlFor="top-k" className="control-label">
-            top_k
+            返回数量 top_k
           </label>
           <select id="top-k" value={topK} onChange={(event) => onTopKChange(Number(event.target.value))}>
             {[3, 5, 10, 20].map((value) => (
@@ -133,21 +133,21 @@ export function SearchControls(props: SearchControlsProps) {
       </div>
 
       <section className="control-block">
-        <div className="control-label">Retrieval mode</div>
+        <div className="control-label">检索模式</div>
         <div className="segmented-control">
           <button
             type="button"
             className={mode === 'static' ? 'selected' : ''}
             onClick={() => onModeChange('static')}
           >
-            Static Browser Demo
+            静态浏览器演示
           </button>
           <button
             type="button"
             className={mode === 'local' ? 'selected' : ''}
             onClick={() => onModeChange('local')}
           >
-            Local C++ Gateway
+            本地 C++ 网关
           </button>
         </div>
       </section>
@@ -155,7 +155,7 @@ export function SearchControls(props: SearchControlsProps) {
       {mode === 'local' && (
         <section className="control-block local-box">
           <label htmlFor="backend-url" className="control-label">
-            Backend URL
+            后端地址
           </label>
           <input
             id="backend-url"
@@ -164,7 +164,7 @@ export function SearchControls(props: SearchControlsProps) {
           />
           <div className="connection-row">
             <button type="button" className="secondary-button" onClick={onTestConnection}>
-              Test Connection
+              测试连接
             </button>
             <span className={`status-pill ${connection.status}`}>{connection.message || connection.status}</span>
           </div>
@@ -172,20 +172,20 @@ export function SearchControls(props: SearchControlsProps) {
       )}
 
       <CheckboxGroup
-        label="Project filters"
+        label="项目过滤"
         values={projects}
         selected={selectedProjects}
         onToggle={onProjectToggle}
       />
       <CheckboxGroup
-        label="Document type filters"
+        label="文档类型过滤"
         values={documentTypes}
         selected={selectedDocumentTypes}
         onToggle={onDocumentTypeToggle}
       />
 
       <button type="button" className="primary-button search-button" disabled={isLoading} onClick={onSearch}>
-        {isLoading ? 'Searching...' : 'Search'}
+        {isLoading ? '检索中...' : '搜索'}
       </button>
     </aside>
   );

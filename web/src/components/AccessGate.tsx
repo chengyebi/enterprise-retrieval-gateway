@@ -17,16 +17,16 @@ export function AccessGate({ onGranted }: AccessGateProps) {
       onGranted();
       return;
     }
-    setError('Access code 不正确');
+    setError('访问码不正确');
   }
 
   return (
     <main className="gate-shell">
       <form className="gate-card" onSubmit={submit}>
-        <div className="eyebrow">GitHub Pages Static Demo</div>
-        <h1>Enterprise Retrieval Gateway Demo</h1>
-        <p>C++17 企业知识库检索网关的静态可视化 Demo</p>
-        <label htmlFor="access-code">Access code</label>
+        <div className="eyebrow">GitHub Pages 静态演示</div>
+        <h1>企业知识库检索网关演示</h1>
+        <p>C++17 企业知识库检索网关的静态可视化演示</p>
+        <label htmlFor="access-code">访问码</label>
         <input
           id="access-code"
           type="password"
@@ -37,10 +37,10 @@ export function AccessGate({ onGranted }: AccessGateProps) {
         />
         {error && <div className="form-error">{error}</div>}
         <button type="submit" className="primary-button">
-          进入 Demo
+          进入演示
         </button>
         <p className="small-note">
-          默认 access code: <code>{ACCESS_CODE}</code>。这是前端演示门禁，不是生产级安全认证。
+          默认访问码：<code>{ACCESS_CODE}</code>。这是前端演示门禁，不是生产级安全认证。
         </p>
       </form>
     </main>

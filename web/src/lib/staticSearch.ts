@@ -248,10 +248,10 @@ export function staticSearch(data: DemoData, request: SearchRequest): StaticSear
     fallback_triggered: fallbackTriggered,
     final_candidate_limit: finalLimit,
     retrieval_explanation: failClosed
-      ? `Unknown user failed closed. ACL summary: ${aclSummary(user)}.`
-      : `Browser static planner scored keyword and hash-vector candidates, applied request filters, then enforced ACL (${aclSummary(
+      ? `未知用户按失败关闭策略处理。ACL 摘要：${aclSummary(user)}。`
+      : `浏览器内静态规划器先对关键词和哈希向量候选打分，再应用请求过滤，最后执行 ACL 过滤（${aclSummary(
           user,
-        )}). This visualizes the C++ gateway product shape and is not a replacement for the real backend.`,
+        )}）。这是 C++ 网关产品形态的静态演示，不替代真实后端。`,
   };
 
   return {

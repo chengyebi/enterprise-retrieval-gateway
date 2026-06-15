@@ -6,6 +6,21 @@ interface ResultCardProps {
   index: number;
 }
 
+function sourceLabel(source?: string): string {
+  if (!source) {
+    return '网关';
+  }
+  const labels: Record<string, string> = {
+    'static-browser': '静态浏览器',
+    'local-cpp-gateway': '本地 C++ 网关',
+    hybrid: '混合检索',
+    keyword: '关键词检索',
+    vector: '向量检索',
+    gateway: '网关',
+  };
+  return labels[source] ?? source;
+}
+
 export function ResultCard({ hit, index }: ResultCardProps) {
   return (
     <article className="result-card">
@@ -15,45 +30,45 @@ export function ResultCard({ hit, index }: ResultCardProps) {
           <h3>{hit.title || hit.document_id}</h3>
         </div>
         <div className="score-box">
-          <span>score</span>
+          <span>分数</span>
           <strong>{compactNumber(hit.score ?? hit.fusion_score ?? 0)}</strong>
         </div>
       </div>
       <p className="snippet">{hit.snippet}</p>
       <div className="metadata-grid">
         <div>
-          <span>document_id</span>
+          <span>文档 ID</span>
           <strong>{hit.document_id}</strong>
         </div>
         <div>
-          <span>chunk_id</span>
+          <span>分块 ID</span>
           <strong>{hit.chunk_id}</strong>
         </div>
         <div>
-          <span>document_type</span>
+          <span>文档类型</span>
           <strong>{hit.document_type}</strong>
         </div>
         <div>
-          <span>project_id</span>
+          <span>项目</span>
           <strong>{hit.project_id}</strong>
         </div>
         <div>
-          <span>department</span>
+          <span>部门</span>
           <strong>{hit.department}</strong>
         </div>
         <div>
-          <span>allowed_groups</span>
-          <strong>{hit.allowed_groups.length ? hit.allowed_groups.join(', ') : 'ACL enforced by gateway'}</strong>
+          <span>可见用户组</span>
+          <strong>{hit.allowed_groups.length ? hit.allowed_groups.join(', ') : '由网关执行 ACL'}</strong>
         </div>
       </div>
       <div className="reason-line">
-        <span>Visible because</span>
+        <span>当前用户可见原因</span>
         <strong>{hit.visibility_reason}</strong>
       </div>
       <div className="score-line">
-        <span>lexical {compactNumber(hit.lexical_score ?? 0)}</span>
-        <span>semantic {compactNumber(hit.semantic_score ?? 0)}</span>
-        <span>source {hit.source || 'gateway'}</span>
+        <span>关键词分 {compactNumber(hit.lexical_score ?? 0)}</span>
+        <span>语义分 {compactNumber(hit.semantic_score ?? 0)}</span>
+        <span>来源 {sourceLabel(hit.source)}</span>
       </div>
     </article>
   );

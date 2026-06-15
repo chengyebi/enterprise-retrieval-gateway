@@ -13,35 +13,35 @@ export function canAccessDocument(user: DemoUser | undefined, document: DemoDocu
   if (!user) {
     return {
       allowed: false,
-      reason: 'unknown user, fail-closed',
+      reason: '未知用户，按失败关闭策略拒绝返回',
     };
   }
 
   if (document.tenant_id !== user.tenant_id) {
     return {
       allowed: false,
-      reason: `tenant mismatch (${document.tenant_id} != ${user.tenant_id})`,
+      reason: `租户不匹配 (${document.tenant_id} != ${user.tenant_id})`,
     };
   }
 
   if (user.is_admin) {
     return {
       allowed: true,
-      reason: `admin in tenant ${user.tenant_id}`,
+      reason: `同租户管理员 (${user.tenant_id})`,
     };
   }
 
   if (document.department !== user.department) {
     return {
       allowed: false,
-      reason: `department mismatch (${document.department} != ${user.department})`,
+      reason: `部门不匹配 (${document.department} != ${user.department})`,
     };
   }
 
   if (!user.project_ids.includes(document.project_id)) {
     return {
       allowed: false,
-      reason: `project ${document.project_id} not in user projects`,
+      reason: `用户无项目 ${document.project_id} 权限`,
     };
   }
 
@@ -49,28 +49,28 @@ export function canAccessDocument(user: DemoUser | undefined, document: DemoDocu
   if (groupMatch.length === 0) {
     return {
       allowed: false,
-      reason: 'no allowed_groups intersection',
+      reason: '用户组与文档可见用户组无交集',
     };
   }
 
   return {
     allowed: true,
-    reason: `tenant, department, project, and group matched (${groupMatch.join(', ')})`,
+    reason: `租户、部门、项目和用户组均匹配 (${groupMatch.join(', ')})`,
   };
 }
 
 export function aclSummary(user: DemoUser | undefined): string {
   if (!user) {
-    return 'unknown user -> fail-closed';
+    return '未知用户 -> 失败关闭，拒绝返回';
   }
   if (user.is_admin) {
-    return `tenant=${user.tenant_id}; admin=true; same-tenant documents allowed`;
+    return `租户=${user.tenant_id}; 管理员=是; 允许访问同租户文档`;
   }
   return [
-    `tenant=${user.tenant_id}`,
-    `department=${user.department}`,
-    `projects=${user.project_ids.join(', ') || 'none'}`,
-    `groups=${user.groups.join(', ') || 'none'}`,
-    'admin=false',
+    `租户=${user.tenant_id}`,
+    `部门=${user.department}`,
+    `项目=${user.project_ids.join(', ') || '无'}`,
+    `用户组=${user.groups.join(', ') || '无'}`,
+    '管理员=否',
   ].join('; ');
 }

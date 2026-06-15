@@ -10,24 +10,24 @@ interface MetricsPanelProps {
 export function MetricsPanel({ metrics, onReset }: MetricsPanelProps) {
   const view = metricsView(metrics);
   const cards = [
-    ['total_queries', String(view.total_queries)],
-    ['success_queries', String(view.success_queries)],
-    ['failed_queries', String(view.failed_queries)],
-    ['avg_latency_ms', compactNumber(view.avg_latency_ms, 1)],
-    ['avg_returned_hits', compactNumber(view.avg_returned_hits, 1)],
-    ['acl_filtered_total', String(view.acl_filtered_total)],
-    ['static_mode_queries', String(view.static_mode_queries)],
-    ['local_gateway_queries', String(view.local_gateway_queries)],
-    ['fallback_rate', `${compactNumber(view.fallback_rate * 100, 1)}%`],
-    ['last_query_time', view.last_query_time ? new Date(view.last_query_time).toLocaleString() : 'none'],
+    ['总查询数', String(view.total_queries)],
+    ['成功查询', String(view.success_queries)],
+    ['失败查询', String(view.failed_queries)],
+    ['平均延迟（毫秒）', compactNumber(view.avg_latency_ms, 1)],
+    ['平均返回数', compactNumber(view.avg_returned_hits, 1)],
+    ['ACL 累计过滤', String(view.acl_filtered_total)],
+    ['静态模式查询', String(view.static_mode_queries)],
+    ['本地网关查询', String(view.local_gateway_queries)],
+    ['候选扩展比例', `${compactNumber(view.fallback_rate * 100, 1)}%`],
+    ['最后查询时间', view.last_query_time ? new Date(view.last_query_time).toLocaleString('zh-CN') : '无'],
   ];
 
   return (
     <section className="metrics-panel">
       <div className="panel-toolbar">
-        <h2>Session Metrics</h2>
+        <h2>会话指标</h2>
         <button type="button" className="secondary-button" onClick={onReset}>
-          Reset Metrics
+          重置指标
         </button>
       </div>
       <div className="metric-grid">

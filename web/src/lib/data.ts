@@ -20,7 +20,7 @@ export async function loadDemoData(): Promise<DemoData> {
       lastError = error;
     }
   }
-  throw new Error(`Unable to load static demo data: ${String(lastError)}`);
+  throw new Error(`无法加载静态演示数据：${String(lastError)}`);
 }
 
 export function documentIndexByChunk(documents: DemoDocument[]): Map<string, DemoDocument> {

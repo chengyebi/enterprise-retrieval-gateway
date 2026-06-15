@@ -61,18 +61,18 @@ function enrichLocalHit(
 ): SearchHit {
   const document = raw.chunk_id ? documentsByChunk.get(raw.chunk_id) : undefined;
   const user = findUser(data.users, userId);
-  const decision = document ? canAccessDocument(user, document) : { allowed: true, reason: 'authorized by local gateway' };
+  const decision = document ? canAccessDocument(user, document) : { allowed: true, reason: '本地网关已完成授权过滤' };
   const score = raw.fusion_score ?? raw.score ?? raw.lexical_score ?? raw.semantic_score ?? 0;
   return {
     tenant_id: document?.tenant_id ?? raw.tenant_id,
-    document_id: raw.document_id ?? document?.document_id ?? 'unknown',
-    chunk_id: raw.chunk_id ?? document?.chunk_id ?? 'unknown',
-    title: raw.title ?? document?.title ?? raw.document_id ?? 'Untitled',
+    document_id: raw.document_id ?? document?.document_id ?? '未知文档',
+    chunk_id: raw.chunk_id ?? document?.chunk_id ?? '未知分块',
+    title: raw.title ?? document?.title ?? raw.document_id ?? '未命名文档',
     snippet: raw.snippet ?? document?.snippet ?? document?.text?.slice(0, 220) ?? '',
-    department: raw.department ?? document?.department ?? 'unavailable',
-    project_id: raw.project_id ?? document?.project_id ?? 'unavailable',
+    department: raw.department ?? document?.department ?? '无可用信息',
+    project_id: raw.project_id ?? document?.project_id ?? '无可用信息',
     allowed_groups: raw.allowed_groups ?? document?.allowed_groups ?? [],
-    document_type: raw.document_type ?? document?.document_type ?? 'unavailable',
+    document_type: raw.document_type ?? document?.document_type ?? '无可用信息',
     score,
     lexical_score: raw.lexical_score,
     semantic_score: raw.semantic_score,
@@ -111,9 +111,9 @@ function mapLocalDebug(
     latency_ms: Number(trace.total_latency_ms ?? measuredLatency),
     fallback_triggered: Boolean(trace.fallback_triggered ?? fallbackTriggered),
     final_candidate_limit: Number(trace.candidate_limit ?? finalCandidateLimit),
-    retrieval_explanation: `Local C++ Gateway response. ACL summary: ${
-      String(trace.acl_filter_summary ?? 'reported by gateway')
-    }.`,
+    retrieval_explanation: `本地 C++ 网关已返回结果。ACL 摘要：${
+      String(trace.acl_filter_summary ?? '由网关报告')
+    }。`,
   };
 }
 
@@ -123,14 +123,14 @@ function toggleValue(values: string[], value: string): string[] {
 
 function selectedUserSummary(data: DemoData | null, userId: string): string {
   if (!data) {
-    return 'loading users';
+    return '正在加载用户';
   }
   const user = findUser(data.users, userId);
   if (!user) {
-    return 'unknown user -> fail-closed';
+    return '未知用户 -> 失败关闭，拒绝返回';
   }
-  return `${user.department}; groups=${user.groups.join(', ')}; projects=${user.project_ids.join(', ')}${
-    user.is_admin ? '; admin=true' : ''
+  return `部门=${user.department}；用户组=${user.groups.join(', ')}；项目=${user.project_ids.join(', ')}${
+    user.is_admin ? '；管理员=true' : ''
   }`;
 }
 
@@ -149,7 +149,7 @@ export default function App() {
   const [backendUrl, setBackendUrl] = useState(
     () => window.localStorage.getItem('erg_demo_backend_url') || DEFAULT_BACKEND_URL,
   );
-  const [connection, setConnection] = useState<ConnectionState>({ status: 'idle', message: 'not tested' });
+  const [connection, setConnection] = useState<ConnectionState>({ status: 'idle', message: '未测试' });
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>('search');
   const [results, setResults] = useState<SearchHit[]>([]);
@@ -189,14 +189,14 @@ export default function App() {
   }
 
   async function testConnection() {
-    setConnection({ status: 'checking', message: 'checking' });
+    setConnection({ status: 'checking', message: '检测中' });
     try {
       await healthCheck(backendUrl);
-      setConnection({ status: 'healthy', message: 'healthy' });
+      setConnection({ status: 'healthy', message: '连接正常' });
     } catch (error) {
       setConnection({
         status: 'failed',
-        message: `failed: ${error instanceof Error ? error.message : String(error)}`,
+        message: `连接失败：${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }
@@ -207,7 +207,7 @@ export default function App() {
     }
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
-      setSearchError('Query cannot be empty.');
+      setSearchError('查询不能为空。');
       setResults([]);
       return;
     }
@@ -279,7 +279,7 @@ export default function App() {
           latency_ms: Math.round(performance.now() - started),
           fallback_triggered: response.fallback_triggered,
           final_candidate_limit: response.final_candidate_limit,
-          retrieval_explanation: 'Local C++ Gateway search succeeded, but debug trace fetch failed.',
+          retrieval_explanation: '本地 C++ 网关搜索成功，但调试记录拉取失败。',
           error: error instanceof Error ? error.message : String(error),
         };
       }
@@ -329,9 +329,9 @@ export default function App() {
     <main className="app-shell">
       <header className="app-header">
         <div>
-          <div className="eyebrow">C++17 Enterprise Search Gateway</div>
-          <h1>Enterprise Retrieval Gateway Demo</h1>
-          <p>C++17 企业知识库检索网关的静态可视化 Demo</p>
+          <div className="eyebrow">C++17 企业搜索网关</div>
+          <h1>企业知识库检索网关演示</h1>
+          <p>C++17 企业知识库检索网关的静态可视化演示</p>
         </div>
         <div className="header-actions">
           <span className="small-note">前端演示门禁，不是生产级安全认证。</span>
@@ -341,7 +341,7 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="tabs" aria-label="Demo tabs">
+      <nav className="tabs" aria-label="演示导航">
         {(['search', 'debug', 'metrics', 'about'] as AppTab[]).map((tab) => (
           <button
             key={tab}
@@ -349,7 +349,7 @@ export default function App() {
             className={activeTab === tab ? 'selected' : ''}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'search' ? 'Search' : tab === 'debug' ? 'Debug' : tab === 'metrics' ? 'Metrics' : 'About'}
+            {tab === 'search' ? '搜索' : tab === 'debug' ? '调试' : tab === 'metrics' ? '指标' : '架构'}
           </button>
         ))}
       </nav>
@@ -386,16 +386,16 @@ export default function App() {
           <section className="results-panel">
             <div className="panel-toolbar">
               <div>
-                <h2>Results</h2>
+                <h2>检索结果</h2>
                 <p>{selectedUserSummary(data, selectedUserId)}</p>
               </div>
-              <span className="status-pill healthy">{results.length} hits</span>
+              <span className="status-pill healthy">{results.length} 条结果</span>
             </div>
             {searchError && <div className="error-banner">{searchError}</div>}
-            {!data && !dataError && <div className="empty-state">Loading demo data...</div>}
+            {!data && !dataError && <div className="empty-state">正在加载演示数据...</div>}
             {data && results.length === 0 && !searchError && (
               <div className="empty-state">
-                No visible hits. Try another user or open Debug to inspect ACL filtering counts.
+                当前用户没有可见结果。可以切换用户，或打开“调试”查看 ACL 过滤数量。
               </div>
             )}
             <div className="result-list">
