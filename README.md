@@ -2,6 +2,69 @@
 
 EnterpriseRetrievalGateway 是一个 C++17 企业知识库检索网关。它位于 OpenSearch 风格的检索系统之上，负责文档级 ACL 权限过滤、关键词/向量混合检索、RRF 融合、过滤感知查询规划、结果去重、增量索引、指标记录、离线评估和本地基准测试。
 
+## Online Demo
+
+GitHub Pages Demo:
+
+```text
+https://chengyebi.github.io/enterprise-retrieval-gateway/
+```
+
+默认 access code:
+
+```text
+erg-demo-local
+```
+
+这个 access code 只是前端演示门禁，会写入浏览器 `localStorage`。它不是生产级认证机制，也不保护真实私有数据。当前 Pages Demo 只使用仓库内的模拟企业语料和模拟 ACL 用户，不包含真实密钥、真实企业数据或外部 API 调用。
+
+Pages 版本是纯静态 B/S Demo：
+
+- 浏览器加载 `web/public/data/demo_data.json`。
+- 浏览器内执行轻量关键词/hash-vector 检索、ACL 过滤、planner candidate expansion 模拟和排序。
+- 支持用户切换、项目过滤、文档类型过滤、结果卡片、Query Debug、Session Metrics 和 About/Architecture。
+- 未知用户按 fail-closed 处理，不返回结果。
+- GitHub Pages 不运行 C++ 后端、Docker、OpenSearch、数据库或任何付费云服务。
+
+本地前端开发：
+
+```sh
+python3 scripts/export_static_demo_data.py
+cd web
+npm install
+npm run dev
+```
+
+由于 Vite base 默认为 `/enterprise-retrieval-gateway/`，本地开发页面通常打开：
+
+```text
+http://localhost:5173/enterprise-retrieval-gateway/
+```
+
+前端构建：
+
+```sh
+python3 scripts/export_static_demo_data.py
+cd web
+npm run build
+```
+
+连接本地真实 C++ 网关：
+
+```sh
+make demo
+./build/ergateway serve --backend memory --port 8080
+```
+
+然后在网页里把 Retrieval mode 切换为 `Local C++ Gateway`，Backend URL 保持 `http://localhost:8080`，点击 `Test Connection`。本地网关模式调用 `/health`、`/metrics`、`/v1/search` 和 `/v1/debug/query/{query_id}`。Pages 上仍然只是浏览器前端，真实检索服务必须由你在本机启动。
+
+GitHub Pages 部署：
+
+- workflow: `.github/workflows/deploy-pages.yml`
+- 触发方式：push 到 `main` 或在 GitHub Actions 手动 `workflow_dispatch`
+- 构建产物：`web/dist`
+- 数据导出：workflow 构建前运行 `python scripts/export_static_demo_data.py`
+
 项目支持两种运行模式：
 
 - `memory`：内存后端，用于快速演示、单元测试和无 Docker 环境。

@@ -64,6 +64,9 @@ std::string httpResponse(const std::string& status, const std::string& body) {
     std::ostringstream out;
     out << "HTTP/1.1 " << status << "\r\n"
         << "Content-Type: application/json\r\n"
+        << "Access-Control-Allow-Origin: *\r\n"
+        << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+        << "Access-Control-Allow-Headers: Content-Type\r\n"
         << "Content-Length: " << body.size() << "\r\n"
         << "Connection: close\r\n\r\n"
         << body;
@@ -143,6 +146,9 @@ int HttpServer::serve(uint16_t port) {
 
 std::string HttpServer::handleRequest(const std::string& request_text) {
     const std::string line = requestLine(request_text);
+    if (line.find("OPTIONS ") == 0) {
+        return httpResponse("204 No Content", "");
+    }
     if (line.find("GET /health ") == 0) {
         return httpResponse("200 OK", gateway_.health());
     }
