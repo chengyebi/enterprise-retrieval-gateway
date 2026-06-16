@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cxx:
+    name: C++ gateway
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Build all Makefile targets
+        run: make all
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Run CLI tests
+        run: make test-cli
+
+      - name: Run OpenSearch integration test
+        run: make test-opensearch
+
+      - name: Configure CMake
+        run: cmake -S . -B build/cmake
+
+      - name: Build CMake targets
+        run: cmake --build build/cmake
+
+      - name: Run CMake tests
+        run: ctest --test-dir build/cmake --output-on-failure

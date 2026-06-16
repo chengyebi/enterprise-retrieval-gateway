@@ -153,6 +153,7 @@ make demo
 
 GitHub Pages 部署：
 
+- CI workflow: `.github/workflows/ci.yml`
 - workflow: `.github/workflows/deploy-pages.yml`
 - 触发方式：push 到 `main` 或在 GitHub Actions 手动 `workflow_dispatch`
 - 构建产物：`web/dist`
@@ -300,6 +301,7 @@ OpenSearch 2.14 不支持 `score-ranker-processor`，所以 `config/opensearch-p
 
 ```sh
 make test
+make test-cli
 python scripts/run_evaluation.py
 python scripts/run_benchmark.py --requests 120 --concurrency 1 4 8
 ```
