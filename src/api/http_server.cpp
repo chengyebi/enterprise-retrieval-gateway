@@ -235,12 +235,27 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse(response.ok ? "200 OK" : "403 Forbidden", searchResponseToJson(response));
     }
     if (line.find("GET /v1/debug/query/") == 0) {
+        std::string authorized_debug_user;
+        if (supabase_auth_.enabled() && supabase_auth_.settings().require_auth) {
+            const std::string authorization = headerValue(headers, "authorization");
+            if (authorization.empty()) {
+                return httpResponse("401 Unauthorized", errorBody("missing authorization"));
+            }
+            const SupabaseAuthResult auth = supabase_auth_.resolveBearerToken(authorization);
+            if (!auth.ok) {
+                return httpResponse("401 Unauthorized", errorBody("unauthorized"));
+            }
+            authorized_debug_user = auth.acl_user_id;
+        }
         const std::string prefix = "GET /v1/debug/query/";
         const auto start = prefix.size();
         const auto end = line.find(' ', start);
         const std::string query_id = line.substr(start, end == std::string::npos ? std::string::npos : end - start);
         const auto* trace = gateway_.debugTrace(query_id);
         if (trace == nullptr) {
+            return httpResponse("404 Not Found", errorBody("trace not found"));
+        }
+        if (!authorized_debug_user.empty() && trace->user_id != authorized_debug_user) {
             return httpResponse("404 Not Found", errorBody("trace not found"));
         }
         return httpResponse("200 OK", traceToJson(*trace));

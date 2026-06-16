@@ -108,6 +108,21 @@ std::string postSearchRequest(const std::string& body, const std::string& author
     return headers + body;
 }
 
+std::string getRequest(const std::string& path, const std::string& authorization = "") {
+    std::string headers = "GET " + path + " HTTP/1.1\r\nHost: localhost\r\n";
+    if (!authorization.empty()) {
+        headers += "Authorization: " + authorization + "\r\n";
+    }
+    return headers + "\r\n";
+}
+
+std::string validSupabaseHsToken() {
+    return
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiJhdXRoLXVzZXItMSIsImF1ZCI6ImF1dGhlbnRpY2F0ZWQiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJleHAiOjIwMDAwMDAwMDB9."
+        "IDxK49S3f2_KLr8LoP86MVQ71A78vbmMaiuvPxDbHJQ";
+}
+
 std::string responseBody(const std::string& response) {
     const auto pos = response.find("\r\n\r\n");
     if (pos == std::string::npos) {
@@ -197,6 +212,46 @@ void testHttpAuthErrorsAreGeneric() {
     requireContains(invalid_auth, "HTTP/1.1 401 Unauthorized", "invalid Bearer token should return HTTP 401");
     requireContains(responseBody(invalid_auth), "unauthorized", "invalid auth response should be generic");
     requireNotContains(responseBody(invalid_auth), "jwt", "invalid auth response should not leak verifier details");
+}
+
+void testHttpDebugTraceAuthBoundaries() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+    const auto backend_response = gateway.search({"backend-user-01", "E1027", 5, {}, {}, true, true});
+    require(backend_response.ok, "debug test search should succeed");
+
+    HttpServer local_server(gateway);
+    const auto local_debug = local_server.handleRequest(getRequest("/v1/debug/query/" + backend_response.query_id));
+    requireContains(local_debug, "HTTP/1.1 200 OK", "local debug trace should remain available without auth");
+
+    SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-1":"backend-user-01"})");
+    SupabaseAuthSettings settings;
+    settings.jwt_secret = "test-secret";
+    settings.expected_audience = "authenticated";
+    settings.expected_issuer = "";
+    settings.require_auth = true;
+    HttpServer protected_server(gateway, SupabaseAuthManager(settings, bindings));
+
+    const auto missing_auth = protected_server.handleRequest(getRequest("/v1/debug/query/" + backend_response.query_id));
+    requireContains(missing_auth, "HTTP/1.1 401 Unauthorized", "protected debug trace should require auth");
+    requireContains(responseBody(missing_auth), "missing authorization", "protected debug missing auth should be generic");
+
+    const auto invalid_auth =
+        protected_server.handleRequest(getRequest("/v1/debug/query/" + backend_response.query_id, "Bearer invalid-token"));
+    requireContains(invalid_auth, "HTTP/1.1 401 Unauthorized", "protected debug trace should reject invalid auth");
+    requireContains(responseBody(invalid_auth), "unauthorized", "protected debug invalid auth should be generic");
+
+    const auto valid_auth = protected_server.handleRequest(
+        getRequest("/v1/debug/query/" + backend_response.query_id, "Bearer " + validSupabaseHsToken()));
+    requireContains(valid_auth, "HTTP/1.1 200 OK", "protected debug trace should allow owning ACL user");
+    requireContains(responseBody(valid_auth), R"("user_id":"backend-user-01")", "debug trace should belong to ACL user");
+
+    const auto finance_response = gateway.search({"finance-user-01", "confidential financial report", 5, {}, {}, true, true});
+    require(finance_response.ok, "finance debug test search should succeed");
+    const auto cross_user = protected_server.handleRequest(
+        getRequest("/v1/debug/query/" + finance_response.query_id, "Bearer " + validSupabaseHsToken()));
+    requireContains(cross_user, "HTTP/1.1 404 Not Found", "debug trace should hide traces for other ACL users");
+    requireNotContains(responseBody(cross_user), "finance-user-01", "cross-user debug denial should not leak trace owner");
 }
 
 void testAclSecurity() {
@@ -341,10 +396,7 @@ void testMetricsAndDebugTrace() {
 }
 
 void testSupabaseJwtBinding() {
-    const std::string token =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-        "eyJzdWIiOiJhdXRoLXVzZXItMSIsImF1ZCI6ImF1dGhlbnRpY2F0ZWQiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJleHAiOjIwMDAwMDAwMDB9."
-        "IDxK49S3f2_KLr8LoP86MVQ71A78vbmMaiuvPxDbHJQ";
+    const std::string token = validSupabaseHsToken();
 
     SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-1":"backend-user-01"})");
     SupabaseAuthSettings settings;
@@ -391,6 +443,7 @@ int main() {
     testRequestMapperValidation();
     testHttpSearchBoundaries();
     testHttpAuthErrorsAreGeneric();
+    testHttpDebugTraceAuthBoundaries();
     testAclSecurity();
     testGatewayBoundaryValidation();
     testRrfAndDedup();
