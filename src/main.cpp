@@ -75,8 +75,11 @@ struct App {
 };
 
 std::string flagValue(int argc, char** argv, const std::string& name, const std::string& default_value) {
-    for (int i = 0; i + 1 < argc; ++i) {
+    for (int i = 0; i < argc; ++i) {
         if (argv[i] == name) {
+            if (i + 1 >= argc || std::string(argv[i + 1]).find("--") == 0) {
+                throw std::invalid_argument(name + " requires a value");
+            }
             return argv[i + 1];
         }
     }

@@ -34,11 +34,23 @@ for value in 0 -1 51 abc; do
         "$BIN" search --backend memory --user backend-user-01 --query E1027 --top-k "$value"
 done
 
+require_error "missing top-k value" \
+    "error: --top-k requires a value" \
+    "$BIN" search --backend memory --user backend-user-01 --query E1027 --top-k
+
+require_error "missing query value" \
+    "error: --query requires a value" \
+    "$BIN" search --backend memory --user backend-user-01 --query --top-k 5
+
 for value in 0 65536 abc; do
     require_error "invalid port $value" \
         "error: --port must be an integer between 1 and 65535" \
         "$BIN" serve --backend memory --port "$value"
 done
+
+require_error "missing port value" \
+    "error: --port requires a value" \
+    "$BIN" serve --backend memory --port
 
 valid_output="$("$BIN" search --backend memory --user backend-user-01 --query E1027 --top-k 5 --project payment)"
 printf '%s' "$valid_output" | grep -Fq '"ok":true' || fail "valid search should succeed"
