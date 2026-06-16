@@ -194,6 +194,16 @@ void testHttpSearchBoundaries() {
     requireNotContains(responseBody(unknown_user), "access policy resolver", "HTTP error must not leak resolver internals");
 }
 
+void testHttpSecurityHeaders() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+    HttpServer server(gateway);
+
+    const auto health = server.handleRequest(getRequest("/health"));
+    requireContains(health, "X-Content-Type-Options: nosniff", "HTTP responses should disable content sniffing");
+    requireContains(health, "Cache-Control: no-store", "HTTP responses should disable API response caching");
+}
+
 void testHttpAuthErrorsAreGeneric() {
     Fixture fixture;
     auto gateway = fixture.gateway();
@@ -502,6 +512,7 @@ int main() {
     testParseBoundedSize();
     testRequestMapperValidation();
     testHttpSearchBoundaries();
+    testHttpSecurityHeaders();
     testHttpAuthErrorsAreGeneric();
     testHttpHealthAuthBoundaries();
     testHttpMetricsAuthBoundaries();

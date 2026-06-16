@@ -69,6 +69,8 @@ std::string httpResponse(const std::string& status, const std::string& body) {
     std::ostringstream out;
     out << "HTTP/1.1 " << status << "\r\n"
         << "Content-Type: application/json\r\n"
+        << "X-Content-Type-Options: nosniff\r\n"
+        << "Cache-Control: no-store\r\n"
         << "Access-Control-Allow-Origin: *\r\n"
         << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
         << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
