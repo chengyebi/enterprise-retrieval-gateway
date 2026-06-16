@@ -117,7 +117,7 @@ curl -s "https://<project>.supabase.co/auth/v1/.well-known/jwks.json" > /tmp/sup
 - `--supabase-jwt-secret` 仍可用于旧式 HS256 Supabase JWT。
 - `--supabase-bindings-file` 是 auth.users.id 到 demo ACL 用户的本地绑定表，格式是一个扁平 JSON object。
 - `--require-supabase-auth` 会让缺少或校验失败的 Bearer token 直接返回 `401`。
-- 启用 `--require-supabase-auth` 后，`/v1/debug/query/{query_id}` 也需要有效 Bearer token，且只能读取同一 ACL 用户自己的 trace。
+- 启用 `--require-supabase-auth` 后，`/metrics` 和 `/v1/debug/query/{query_id}` 也需要有效 Bearer token；debug trace 只能读取同一 ACL 用户自己的记录。
 - 没有启用这组参数时，C++ 网关仍保持原来的本地 demo 行为。
 
 本地前端开发：

@@ -142,6 +142,34 @@ std::string headerValue(const std::map<std::string, std::string>& headers, const
     return it->second;
 }
 
+struct AuthGateResult {
+    bool ok{true};
+    std::string acl_user_id;
+    std::string response;
+};
+
+AuthGateResult requireBearerAuth(const SupabaseAuthManager& auth_manager,
+                                 const std::map<std::string, std::string>& headers) {
+    AuthGateResult result;
+    if (!auth_manager.enabled() || !auth_manager.settings().require_auth) {
+        return result;
+    }
+    const std::string authorization = headerValue(headers, "authorization");
+    if (authorization.empty()) {
+        result.ok = false;
+        result.response = httpResponse("401 Unauthorized", errorBody("missing authorization"));
+        return result;
+    }
+    const SupabaseAuthResult auth = auth_manager.resolveBearerToken(authorization);
+    if (!auth.ok) {
+        result.ok = false;
+        result.response = httpResponse("401 Unauthorized", errorBody("unauthorized"));
+        return result;
+    }
+    result.acl_user_id = auth.acl_user_id;
+    return result;
+}
+
 }  // namespace
 
 HttpServer::HttpServer(RetrievalGateway& gateway, SupabaseAuthManager supabase_auth)
@@ -207,6 +235,10 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse("200 OK", gateway_.health());
     }
     if (line.find("GET /metrics ") == 0) {
+        const auto auth_gate = requireBearerAuth(supabase_auth_, headers);
+        if (!auth_gate.ok) {
+            return auth_gate.response;
+        }
         return httpResponse("200 OK", metricsToJson(gateway_.metrics()));
     }
     if (line.find("POST /v1/search ") == 0) {
@@ -235,17 +267,9 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse(response.ok ? "200 OK" : "403 Forbidden", searchResponseToJson(response));
     }
     if (line.find("GET /v1/debug/query/") == 0) {
-        std::string authorized_debug_user;
-        if (supabase_auth_.enabled() && supabase_auth_.settings().require_auth) {
-            const std::string authorization = headerValue(headers, "authorization");
-            if (authorization.empty()) {
-                return httpResponse("401 Unauthorized", errorBody("missing authorization"));
-            }
-            const SupabaseAuthResult auth = supabase_auth_.resolveBearerToken(authorization);
-            if (!auth.ok) {
-                return httpResponse("401 Unauthorized", errorBody("unauthorized"));
-            }
-            authorized_debug_user = auth.acl_user_id;
+        const auto auth_gate = requireBearerAuth(supabase_auth_, headers);
+        if (!auth_gate.ok) {
+            return auth_gate.response;
         }
         const std::string prefix = "GET /v1/debug/query/";
         const auto start = prefix.size();
@@ -255,7 +279,7 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         if (trace == nullptr) {
             return httpResponse("404 Not Found", errorBody("trace not found"));
         }
-        if (!authorized_debug_user.empty() && trace->user_id != authorized_debug_user) {
+        if (!auth_gate.acl_user_id.empty() && trace->user_id != auth_gate.acl_user_id) {
             return httpResponse("404 Not Found", errorBody("trace not found"));
         }
         return httpResponse("200 OK", traceToJson(*trace));

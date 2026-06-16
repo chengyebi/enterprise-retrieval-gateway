@@ -214,6 +214,35 @@ void testHttpAuthErrorsAreGeneric() {
     requireNotContains(responseBody(invalid_auth), "jwt", "invalid auth response should not leak verifier details");
 }
 
+void testHttpMetricsAuthBoundaries() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+
+    HttpServer local_server(gateway);
+    const auto local_metrics = local_server.handleRequest(getRequest("/metrics"));
+    requireContains(local_metrics, "HTTP/1.1 200 OK", "local metrics should remain available without auth");
+
+    SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-1":"backend-user-01"})");
+    SupabaseAuthSettings settings;
+    settings.jwt_secret = "test-secret";
+    settings.expected_audience = "authenticated";
+    settings.expected_issuer = "";
+    settings.require_auth = true;
+    HttpServer protected_server(gateway, SupabaseAuthManager(settings, bindings));
+
+    const auto missing_auth = protected_server.handleRequest(getRequest("/metrics"));
+    requireContains(missing_auth, "HTTP/1.1 401 Unauthorized", "protected metrics should require auth");
+    requireContains(responseBody(missing_auth), "missing authorization", "protected metrics missing auth should be generic");
+
+    const auto invalid_auth = protected_server.handleRequest(getRequest("/metrics", "Bearer invalid-token"));
+    requireContains(invalid_auth, "HTTP/1.1 401 Unauthorized", "protected metrics should reject invalid auth");
+    requireContains(responseBody(invalid_auth), "unauthorized", "protected metrics invalid auth should be generic");
+
+    const auto valid_auth = protected_server.handleRequest(getRequest("/metrics", "Bearer " + validSupabaseHsToken()));
+    requireContains(valid_auth, "HTTP/1.1 200 OK", "protected metrics should allow valid auth");
+    requireContains(responseBody(valid_auth), "total_queries", "protected metrics should return metrics body");
+}
+
 void testHttpDebugTraceAuthBoundaries() {
     Fixture fixture;
     auto gateway = fixture.gateway();
@@ -443,6 +472,7 @@ int main() {
     testRequestMapperValidation();
     testHttpSearchBoundaries();
     testHttpAuthErrorsAreGeneric();
+    testHttpMetricsAuthBoundaries();
     testHttpDebugTraceAuthBoundaries();
     testAclSecurity();
     testGatewayBoundaryValidation();
