@@ -214,6 +214,37 @@ void testHttpAuthErrorsAreGeneric() {
     requireNotContains(responseBody(invalid_auth), "jwt", "invalid auth response should not leak verifier details");
 }
 
+void testHttpHealthAuthBoundaries() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+
+    HttpServer local_server(gateway);
+    const auto local_health = local_server.handleRequest(getRequest("/health"));
+    requireContains(local_health, "HTTP/1.1 200 OK", "local health should be public");
+    requireContains(responseBody(local_health), "backend", "local health should include backend details");
+
+    SupabaseAuthBindings bindings = SupabaseAuthBindings::fromObjectMap(R"({"auth-user-1":"backend-user-01"})");
+    SupabaseAuthSettings settings;
+    settings.jwt_secret = "test-secret";
+    settings.expected_audience = "authenticated";
+    settings.expected_issuer = "";
+    settings.require_auth = true;
+    HttpServer protected_server(gateway, SupabaseAuthManager(settings, bindings));
+
+    const auto public_health = protected_server.handleRequest(getRequest("/health"));
+    requireContains(public_health, "HTTP/1.1 200 OK", "protected public health should stay available");
+    requireContains(responseBody(public_health), R"("status":"ok")", "protected public health should report status");
+    requireNotContains(responseBody(public_health), "backend", "protected public health should hide backend details");
+    requireNotContains(responseBody(public_health), "chunks", "protected public health should hide corpus size");
+
+    const auto invalid_auth = protected_server.handleRequest(getRequest("/health", "Bearer invalid-token"));
+    requireContains(invalid_auth, "HTTP/1.1 401 Unauthorized", "protected health should reject invalid auth");
+
+    const auto valid_auth = protected_server.handleRequest(getRequest("/health", "Bearer " + validSupabaseHsToken()));
+    requireContains(valid_auth, "HTTP/1.1 200 OK", "protected health should allow valid auth");
+    requireContains(responseBody(valid_auth), "backend", "authenticated health should include backend details");
+}
+
 void testHttpMetricsAuthBoundaries() {
     Fixture fixture;
     auto gateway = fixture.gateway();
@@ -472,6 +503,7 @@ int main() {
     testRequestMapperValidation();
     testHttpSearchBoundaries();
     testHttpAuthErrorsAreGeneric();
+    testHttpHealthAuthBoundaries();
     testHttpMetricsAuthBoundaries();
     testHttpDebugTraceAuthBoundaries();
     testAclSecurity();

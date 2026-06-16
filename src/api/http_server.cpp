@@ -82,6 +82,10 @@ std::string errorBody(const std::string& message) {
     return "{\"error\":\"" + jsonEscape(message) + "\"}";
 }
 
+std::string minimalHealthBody() {
+    return "{\"status\":\"ok\"}";
+}
+
 std::string requestBody(const std::string& request_text) {
     const std::string sep = "\r\n\r\n";
     const auto pos = request_text.find(sep);
@@ -232,6 +236,16 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse("204 No Content", "");
     }
     if (line.find("GET /health ") == 0) {
+        if (supabase_auth_.enabled() && supabase_auth_.settings().require_auth) {
+            const std::string authorization = headerValue(headers, "authorization");
+            if (authorization.empty()) {
+                return httpResponse("200 OK", minimalHealthBody());
+            }
+            const SupabaseAuthResult auth = supabase_auth_.resolveBearerToken(authorization);
+            if (!auth.ok) {
+                return httpResponse("401 Unauthorized", errorBody("unauthorized"));
+            }
+        }
         return httpResponse("200 OK", gateway_.health());
     }
     if (line.find("GET /metrics ") == 0) {
