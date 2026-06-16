@@ -25,6 +25,7 @@ LIB_SRCS := \
 	src/backend/opensearch_http_client.cpp \
 	src/common/demo_data.cpp \
 	src/common/json_util.cpp \
+	src/common/parse_util.cpp \
 	src/common/text.cpp \
 	src/indexing/embedding_provider.cpp \
 	src/indexing/incremental_indexer.cpp \
@@ -37,7 +38,7 @@ LIB_SRCS := \
 
 HEADERS := $(shell find include -type f -name '*.h')
 
-.PHONY: all test test-opensearch clean demo
+.PHONY: all test test-cli test-opensearch clean demo
 
 all: build/ergateway build/test_core build/test_opensearch_backend
 
@@ -55,6 +56,9 @@ build/test_opensearch_backend: build $(LIB_SRCS) tests/integration/test_opensear
 
 test: build/test_core
 	./build/test_core
+
+test-cli: build/ergateway
+	sh tests/cli/test_cli.sh ./build/ergateway
 
 test-opensearch: build/test_opensearch_backend
 	./build/test_opensearch_backend

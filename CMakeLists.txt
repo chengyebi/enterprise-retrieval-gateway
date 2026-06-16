@@ -15,6 +15,7 @@ add_library(retrieval_gateway
     src/backend/opensearch_http_client.cpp
     src/common/demo_data.cpp
     src/common/json_util.cpp
+    src/common/parse_util.cpp
     src/common/text.cpp
     src/indexing/embedding_provider.cpp
     src/indexing/incremental_indexer.cpp

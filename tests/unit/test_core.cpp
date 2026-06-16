@@ -1,13 +1,17 @@
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "retrieval_gateway/api/http_server.h"
+#include "retrieval_gateway/api/request_mapper.h"
 #include "retrieval_gateway/auth/access_policy_resolver.h"
 #include "retrieval_gateway/auth/acl_filter_builder.h"
 #include "retrieval_gateway/auth/supabase_auth.h"
 #include "retrieval_gateway/backend/in_memory_opensearch_client.h"
 #include "retrieval_gateway/common/demo_data.h"
+#include "retrieval_gateway/common/parse_util.h"
 #include "retrieval_gateway/indexing/incremental_indexer.h"
 #include "retrieval_gateway/search/filter_aware_query_planner.h"
 #include "retrieval_gateway/search/retrieval_gateway.h"
@@ -61,6 +65,140 @@ bool containsDocument(const SearchResponse& response, const std::string& documen
     return false;
 }
 
+void requireInvalidRequest(const std::string& body, const std::string& expected_error) {
+    try {
+        (void)searchRequestFromJson(body);
+    } catch (const std::invalid_argument& error) {
+        const std::string message = error.what();
+        require(message.find(expected_error) != std::string::npos, "validation error should mention " + expected_error);
+        return;
+    }
+    require(false, "invalid request should be rejected");
+}
+
+void requireInvalidSize(const std::string& raw, const std::string& field_name, std::size_t min_value, std::size_t max_value) {
+    try {
+        (void)parseBoundedSize(raw, field_name, min_value, max_value);
+    } catch (const std::invalid_argument& error) {
+        const std::string message = error.what();
+        require(message.find(field_name) != std::string::npos, "bounded size error should mention field name");
+        return;
+    }
+    require(false, "invalid bounded size should be rejected");
+}
+
+void testParseBoundedSize() {
+    require(parseBoundedSize("1", "--top-k", 1, kMaxTopK) == 1, "bounded size should accept minimum");
+    require(parseBoundedSize("50", "--top-k", 1, kMaxTopK) == 50, "bounded size should accept maximum");
+    require(parseBoundedSize("8080", "--port", 1, 65535) == 8080, "bounded size should accept normal port");
+    requireInvalidSize("", "--top-k", 1, kMaxTopK);
+    requireInvalidSize("0", "--top-k", 1, kMaxTopK);
+    requireInvalidSize("-1", "--top-k", 1, kMaxTopK);
+    requireInvalidSize("51", "--top-k", 1, kMaxTopK);
+    requireInvalidSize("abc", "--top-k", 1, kMaxTopK);
+    requireInvalidSize("65536", "--port", 1, 65535);
+}
+
+std::string postSearchRequest(const std::string& body, const std::string& authorization = "") {
+    std::string headers = "POST /v1/search HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n";
+    if (!authorization.empty()) {
+        headers += "Authorization: " + authorization + "\r\n";
+    }
+    headers += "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n";
+    return headers + body;
+}
+
+std::string responseBody(const std::string& response) {
+    const auto pos = response.find("\r\n\r\n");
+    if (pos == std::string::npos) {
+        return "";
+    }
+    return response.substr(pos + 4);
+}
+
+void requireContains(const std::string& value, const std::string& expected, const std::string& message) {
+    require(value.find(expected) != std::string::npos, message);
+}
+
+void requireNotContains(const std::string& value, const std::string& unexpected, const std::string& message) {
+    require(value.find(unexpected) == std::string::npos, message);
+}
+
+void testRequestMapperValidation() {
+    requireInvalidRequest(R"({"user_id":"backend-user-01","query":"E1027",})", "valid JSON");
+    requireInvalidRequest(R"({"user_id":"backend-user-01","top_k":5})", "query");
+    requireInvalidRequest(R"({"query":"E1027","top_k":5})", "user_id");
+    requireInvalidRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":0})", "top_k");
+    requireInvalidRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":-1})", "top_k");
+    requireInvalidRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":51})", "top_k");
+    requireInvalidRequest(R"({"user_id":"backend-user-01","query":"E1027","project_ids":[1]})", "project_ids");
+
+    const auto request =
+        searchRequestFromJson(
+            R"({"user_id":"backend-user-01","query":"E1027","top_k":5,"project_ids":["payment"],"document_types":["runbook"],"unknown":true})");
+    require(request.user_id == "backend-user-01", "mapper should preserve user_id");
+    require(request.query == "E1027", "mapper should preserve query");
+    require(request.top_k == 5, "mapper should preserve valid top_k");
+    require(request.project_ids.size() == 1 && request.project_ids.front() == "payment", "mapper should preserve project filters");
+    require(request.document_types.size() == 1 && request.document_types.front() == "runbook",
+            "mapper should preserve document type filters");
+}
+
+void testHttpSearchBoundaries() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+    HttpServer server(gateway);
+
+    const auto malformed = server.handleRequest(postSearchRequest(R"({"user_id":"backend-user-01","query":"E1027",})"));
+    requireContains(malformed, "HTTP/1.1 400 Bad Request", "malformed JSON should return HTTP 400");
+    requireContains(responseBody(malformed), "valid JSON", "malformed JSON response should be clear");
+
+    const auto missing_query = server.handleRequest(postSearchRequest(R"({"user_id":"backend-user-01","top_k":5})"));
+    requireContains(missing_query, "HTTP/1.1 400 Bad Request", "missing query should return HTTP 400");
+    requireContains(responseBody(missing_query), "query", "missing query response should name field");
+
+    const auto missing_user = server.handleRequest(postSearchRequest(R"({"query":"E1027","top_k":5})"));
+    requireContains(missing_user, "HTTP/1.1 400 Bad Request", "missing user_id should return HTTP 400");
+    requireContains(responseBody(missing_user), "user_id", "missing user_id response should name field");
+
+    const auto zero_top_k =
+        server.handleRequest(postSearchRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":0})"));
+    requireContains(zero_top_k, "HTTP/1.1 400 Bad Request", "top_k=0 should return HTTP 400");
+    requireContains(responseBody(zero_top_k), "top_k", "top_k=0 response should name field");
+
+    const auto unknown_field =
+        server.handleRequest(postSearchRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":5,"ignored":true})"));
+    requireContains(unknown_field, "HTTP/1.1 200 OK", "unknown fields should be ignored");
+    requireContains(responseBody(unknown_field), R"("ok":true)", "valid request with unknown field should search");
+
+    const auto unknown_user =
+        server.handleRequest(postSearchRequest(R"({"user_id":"unknown-user","query":"E1027","top_k":5})"));
+    requireContains(unknown_user, "HTTP/1.1 403 Forbidden", "unknown user should return HTTP 403");
+    requireContains(responseBody(unknown_user), R"("error":"request denied")", "unknown user error should be generic");
+    requireContains(responseBody(unknown_user), R"("hits":[])", "unknown user should not receive hits");
+    requireNotContains(responseBody(unknown_user), "access policy resolver", "HTTP error must not leak resolver internals");
+}
+
+void testHttpAuthErrorsAreGeneric() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+    SupabaseAuthSettings settings;
+    settings.jwt_secret = "test-secret";
+    settings.require_auth = true;
+    HttpServer server(gateway, SupabaseAuthManager(settings, SupabaseAuthBindings()));
+
+    const auto missing_auth =
+        server.handleRequest(postSearchRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":5})"));
+    requireContains(missing_auth, "HTTP/1.1 401 Unauthorized", "missing Bearer token should return HTTP 401");
+    requireContains(responseBody(missing_auth), "missing authorization", "missing auth response should be generic");
+
+    const auto invalid_auth = server.handleRequest(
+        postSearchRequest(R"({"user_id":"backend-user-01","query":"E1027","top_k":5})", "Bearer invalid-token"));
+    requireContains(invalid_auth, "HTTP/1.1 401 Unauthorized", "invalid Bearer token should return HTTP 401");
+    requireContains(responseBody(invalid_auth), "unauthorized", "invalid auth response should be generic");
+    requireNotContains(responseBody(invalid_auth), "jwt", "invalid auth response should not leak verifier details");
+}
+
 void testAclSecurity() {
     Fixture fixture;
     auto gateway = fixture.gateway();
@@ -77,6 +215,17 @@ void testAclSecurity() {
         require(hit.document_id != "finance-report-q2", "backend user must not see finance report");
     }
 
+    auto filtered_finance_leak = gateway.search(
+        {"backend-user-01", "confidential financial report revenue margin", 5, {"finance-core"}, {"financial_report"}, true, true});
+    require(filtered_finance_leak.ok, "request filters should not make authorized user fail");
+    require(!containsDocument(filtered_finance_leak, "finance-report-q2"),
+            "project/document_type filters must not bypass ACL");
+
+    auto filtered_sre_leak =
+        gateway.search({"backend-user-01", "payment SRE on-call", 5, {"payment"}, {"runbook"}, true, true});
+    require(filtered_sre_leak.ok, "request filters should keep search successful");
+    require(!containsDocument(filtered_sre_leak, "oncall-payment"), "document_type filter must not bypass group ACL");
+
     auto finance_response = gateway.search({"finance-user-01", "confidential financial report revenue margin", 5, {}, {}, true, true});
     require(containsDocument(finance_response, "finance-report-q2"), "finance user should see finance report");
 
@@ -85,6 +234,16 @@ void testAclSecurity() {
 
     auto unknown = gateway.search({"unknown-user", "E1027", 5, {}, {}, true, true});
     require(!unknown.ok, "unknown user should fail closed");
+    require(unknown.hits.empty(), "unknown user must not receive hits");
+}
+
+void testGatewayBoundaryValidation() {
+    Fixture fixture;
+    auto gateway = fixture.gateway();
+
+    auto zero_top_k = gateway.search({"backend-user-01", "E1027", 0, {}, {}, true, true});
+    require(!zero_top_k.ok, "gateway should reject top_k=0");
+    require(zero_top_k.hits.empty(), "top_k=0 should not return hits");
 }
 
 void testRrfAndDedup() {
@@ -228,7 +387,12 @@ void testSupabaseEs256JwksBinding() {
 }  // namespace
 
 int main() {
+    testParseBoundedSize();
+    testRequestMapperValidation();
+    testHttpSearchBoundaries();
+    testHttpAuthErrorsAreGeneric();
     testAclSecurity();
+    testGatewayBoundaryValidation();
     testRrfAndDedup();
     testPlannerBranches();
     testIncrementalIndexer();

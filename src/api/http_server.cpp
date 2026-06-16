@@ -78,6 +78,10 @@ std::string httpResponse(const std::string& status, const std::string& body) {
     return out.str();
 }
 
+std::string errorBody(const std::string& message) {
+    return "{\"error\":\"" + jsonEscape(message) + "\"}";
+}
+
 std::string requestBody(const std::string& request_text) {
     const std::string sep = "\r\n\r\n";
     const auto pos = request_text.find(sep);
@@ -206,20 +210,28 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         return httpResponse("200 OK", metricsToJson(gateway_.metrics()));
     }
     if (line.find("POST /v1/search ") == 0) {
-        auto request = searchRequestFromJson(requestBody(request_text));
+        SearchRequest request;
+        try {
+            request = searchRequestFromJson(requestBody(request_text));
+        } catch (const std::invalid_argument& error) {
+            return httpResponse("400 Bad Request", errorBody(error.what()));
+        }
         const std::string authorization = headerValue(headers, "authorization");
         if (supabase_auth_.enabled()) {
             if (!authorization.empty()) {
                 const SupabaseAuthResult auth = supabase_auth_.resolveBearerToken(authorization);
                 if (!auth.ok) {
-                    return httpResponse("401 Unauthorized", "{\"error\":\"" + jsonEscape(auth.error) + "\"}");
+                    return httpResponse("401 Unauthorized", errorBody("unauthorized"));
                 }
                 request.user_id = auth.acl_user_id;
             } else if (supabase_auth_.settings().require_auth) {
-                return httpResponse("401 Unauthorized", "{\"error\":\"missing Bearer authorization header\"}");
+                return httpResponse("401 Unauthorized", errorBody("missing authorization"));
             }
         }
-        const auto response = gateway_.search(request);
+        auto response = gateway_.search(request);
+        if (!response.ok) {
+            response.error = "request denied";
+        }
         return httpResponse(response.ok ? "200 OK" : "403 Forbidden", searchResponseToJson(response));
     }
     if (line.find("GET /v1/debug/query/") == 0) {
@@ -229,11 +241,11 @@ std::string HttpServer::handleRequest(const std::string& request_text) {
         const std::string query_id = line.substr(start, end == std::string::npos ? std::string::npos : end - start);
         const auto* trace = gateway_.debugTrace(query_id);
         if (trace == nullptr) {
-            return httpResponse("404 Not Found", "{\"error\":\"trace not found\"}");
+            return httpResponse("404 Not Found", errorBody("trace not found"));
         }
         return httpResponse("200 OK", traceToJson(*trace));
     }
-    return httpResponse("404 Not Found", "{\"error\":\"not found\"}");
+    return httpResponse("404 Not Found", errorBody("not found"));
 }
 
 }  // namespace erg

@@ -78,6 +78,10 @@ int main() {
     ACLFilterBuilder acl;
     AccessPolicyResolver resolver = AccessPolicyResolver::demo();
     OpenSearchHttpClient backend(OpenSearchOptions{url, index});
+    if (!backend.isAvailable()) {
+        std::cout << "SKIP: OpenSearch is not available at " << url << "\n";
+        return 0;
+    }
     EmbeddingProvider embeddings(64, "local-hash-v1");
     QueryMetricsRecorder metrics;
     IncrementalIndexer indexer(backend, embeddings);

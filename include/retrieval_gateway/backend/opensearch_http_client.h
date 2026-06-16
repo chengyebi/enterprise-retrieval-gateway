@@ -16,6 +16,8 @@ class OpenSearchHttpClient : public SearchBackend {
 public:
     explicit OpenSearchHttpClient(OpenSearchOptions options = OpenSearchOptions{});
 
+    bool isAvailable() const;
+
     BulkResult bulkUpsert(const std::vector<DocumentChunk>& chunks) override;
     bool deleteDocument(const std::string& document_id) override;
     bool updateAcl(const std::string& document_id,

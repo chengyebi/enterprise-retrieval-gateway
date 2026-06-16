@@ -9,77 +9,329 @@ namespace erg {
 
 namespace {
 
-std::string findJsonValueSpan(const std::string& body, const std::string& key) {
-    const std::string quoted_key = "\"" + key + "\"";
-    std::size_t key_pos = body.find(quoted_key);
-    if (key_pos == std::string::npos) {
-        return "";
+void skipWhitespace(const std::string& body, std::size_t& pos) {
+    while (pos < body.size() && std::isspace(static_cast<unsigned char>(body[pos]))) {
+        ++pos;
     }
-    std::size_t colon = body.find(':', key_pos + quoted_key.size());
-    if (colon == std::string::npos) {
-        return "";
-    }
-    std::size_t start = colon + 1;
-    while (start < body.size() && std::isspace(static_cast<unsigned char>(body[start]))) {
-        ++start;
-    }
-    if (start >= body.size()) {
-        return "";
-    }
+}
 
-    if (body[start] == '"') {
-        bool escaped = false;
-        for (std::size_t i = start + 1; i < body.size(); ++i) {
-            if (escaped) {
-                escaped = false;
-                continue;
-            }
-            if (body[i] == '\\') {
-                escaped = true;
-                continue;
-            }
-            if (body[i] == '"') {
-                return body.substr(start, i - start + 1);
-            }
+bool isHexDigit(char c) {
+    return std::isxdigit(static_cast<unsigned char>(c)) != 0;
+}
+
+bool scanJsonStringEnd(const std::string& body, std::size_t start, std::size_t& end) {
+    if (start >= body.size() || body[start] != '"') {
+        return false;
+    }
+    for (std::size_t i = start + 1; i < body.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(body[i]);
+        if (c == '"') {
+            end = i + 1;
+            return true;
         }
-        return "";
+        if (c < 0x20) {
+            return false;
+        }
+        if (c != '\\') {
+            continue;
+        }
+        if (++i >= body.size()) {
+            return false;
+        }
+        const char escaped = body[i];
+        switch (escaped) {
+            case '"':
+            case '\\':
+            case '/':
+            case 'b':
+            case 'f':
+            case 'n':
+            case 'r':
+            case 't':
+                break;
+            case 'u':
+                if (i + 4 >= body.size()) {
+                    return false;
+                }
+                for (std::size_t j = i + 1; j <= i + 4; ++j) {
+                    if (!isHexDigit(body[j])) {
+                        return false;
+                    }
+                }
+                i += 4;
+                break;
+            default:
+                return false;
+        }
     }
+    return false;
+}
 
-    if (body[start] == '[') {
-        int depth = 0;
-        bool in_string = false;
-        bool escaped = false;
+bool scanJsonValueEnd(const std::string& body, std::size_t start, std::size_t& end) {
+    skipWhitespace(body, start);
+    if (start >= body.size()) {
+        return false;
+    }
+    if (body[start] == '"') {
+        return scanJsonStringEnd(body, start, end);
+    }
+    if (body[start] == '[' || body[start] == '{') {
+        std::vector<char> closers;
         for (std::size_t i = start; i < body.size(); ++i) {
-            const char c = body[i];
-            if (escaped) {
-                escaped = false;
+            if (body[i] == '"') {
+                std::size_t string_end = 0;
+                if (!scanJsonStringEnd(body, i, string_end)) {
+                    return false;
+                }
+                i = string_end - 1;
                 continue;
             }
-            if (c == '\\') {
-                escaped = true;
+            if (body[i] == '[') {
+                closers.push_back(']');
                 continue;
             }
-            if (c == '"') {
-                in_string = !in_string;
+            if (body[i] == '{') {
+                closers.push_back('}');
                 continue;
             }
-            if (!in_string && c == '[') {
-                ++depth;
-            }
-            if (!in_string && c == ']') {
-                --depth;
-                if (depth == 0) {
-                    return body.substr(start, i - start + 1);
+            if (body[i] == ']' || body[i] == '}') {
+                if (closers.empty() || closers.back() != body[i]) {
+                    return false;
+                }
+                closers.pop_back();
+                if (closers.empty()) {
+                    end = i + 1;
+                    return true;
                 }
             }
         }
+        return false;
     }
 
-    std::size_t end = start;
-    while (end < body.size() && body[end] != ',' && body[end] != '}' && !std::isspace(static_cast<unsigned char>(body[end]))) {
+    end = start;
+    while (end < body.size() && body[end] != ',' && body[end] != '}' && body[end] != ']' &&
+           !std::isspace(static_cast<unsigned char>(body[end]))) {
         ++end;
     }
-    return body.substr(start, end - start);
+    return end > start;
+}
+
+class JsonValidator {
+public:
+    explicit JsonValidator(const std::string& body) : body_(body) {}
+
+    bool validObject() {
+        skipWhitespace(body_, pos_);
+        if (!parseObject()) {
+            return false;
+        }
+        skipWhitespace(body_, pos_);
+        return pos_ == body_.size();
+    }
+
+private:
+    bool consume(char expected) {
+        if (pos_ >= body_.size() || body_[pos_] != expected) {
+            return false;
+        }
+        ++pos_;
+        return true;
+    }
+
+    bool parseValue() {
+        skipWhitespace(body_, pos_);
+        if (pos_ >= body_.size()) {
+            return false;
+        }
+        switch (body_[pos_]) {
+            case '"':
+                return parseString();
+            case '{':
+                return parseObject();
+            case '[':
+                return parseArray();
+            case 't':
+                return parseLiteral("true");
+            case 'f':
+                return parseLiteral("false");
+            case 'n':
+                return parseLiteral("null");
+            default:
+                return parseNumber();
+        }
+    }
+
+    bool parseObject() {
+        if (!consume('{')) {
+            return false;
+        }
+        skipWhitespace(body_, pos_);
+        if (consume('}')) {
+            return true;
+        }
+        while (true) {
+            skipWhitespace(body_, pos_);
+            if (!parseString()) {
+                return false;
+            }
+            skipWhitespace(body_, pos_);
+            if (!consume(':')) {
+                return false;
+            }
+            if (!parseValue()) {
+                return false;
+            }
+            skipWhitespace(body_, pos_);
+            if (consume('}')) {
+                return true;
+            }
+            if (!consume(',')) {
+                return false;
+            }
+            skipWhitespace(body_, pos_);
+            if (pos_ < body_.size() && body_[pos_] == '}') {
+                return false;
+            }
+        }
+    }
+
+    bool parseArray() {
+        if (!consume('[')) {
+            return false;
+        }
+        skipWhitespace(body_, pos_);
+        if (consume(']')) {
+            return true;
+        }
+        while (true) {
+            if (!parseValue()) {
+                return false;
+            }
+            skipWhitespace(body_, pos_);
+            if (consume(']')) {
+                return true;
+            }
+            if (!consume(',')) {
+                return false;
+            }
+            skipWhitespace(body_, pos_);
+            if (pos_ < body_.size() && body_[pos_] == ']') {
+                return false;
+            }
+        }
+    }
+
+    bool parseString() {
+        std::size_t end = 0;
+        if (!scanJsonStringEnd(body_, pos_, end)) {
+            return false;
+        }
+        pos_ = end;
+        return true;
+    }
+
+    bool parseLiteral(const std::string& literal) {
+        if (body_.compare(pos_, literal.size(), literal) != 0) {
+            return false;
+        }
+        pos_ += literal.size();
+        return true;
+    }
+
+    bool parseNumber() {
+        if (pos_ >= body_.size()) {
+            return false;
+        }
+        if (body_[pos_] == '-') {
+            ++pos_;
+        }
+        if (pos_ >= body_.size()) {
+            return false;
+        }
+        if (body_[pos_] == '0') {
+            ++pos_;
+        } else if (body_[pos_] >= '1' && body_[pos_] <= '9') {
+            while (pos_ < body_.size() && std::isdigit(static_cast<unsigned char>(body_[pos_]))) {
+                ++pos_;
+            }
+        } else {
+            return false;
+        }
+        if (pos_ < body_.size() && body_[pos_] == '.') {
+            ++pos_;
+            const std::size_t first_fraction = pos_;
+            while (pos_ < body_.size() && std::isdigit(static_cast<unsigned char>(body_[pos_]))) {
+                ++pos_;
+            }
+            if (pos_ == first_fraction) {
+                return false;
+            }
+        }
+        if (pos_ < body_.size() && (body_[pos_] == 'e' || body_[pos_] == 'E')) {
+            ++pos_;
+            if (pos_ < body_.size() && (body_[pos_] == '+' || body_[pos_] == '-')) {
+                ++pos_;
+            }
+            const std::size_t first_exponent = pos_;
+            while (pos_ < body_.size() && std::isdigit(static_cast<unsigned char>(body_[pos_]))) {
+                ++pos_;
+            }
+            if (pos_ == first_exponent) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const std::string& body_;
+    std::size_t pos_{0};
+};
+
+std::string findJsonValueSpan(const std::string& body, const std::string& key) {
+    std::size_t pos = 0;
+    skipWhitespace(body, pos);
+    if (pos >= body.size() || body[pos] != '{') {
+        return "";
+    }
+    ++pos;
+    while (true) {
+        skipWhitespace(body, pos);
+        if (pos >= body.size() || body[pos] == '}') {
+            return "";
+        }
+        const std::size_t key_start = pos;
+        std::size_t key_end = 0;
+        if (!scanJsonStringEnd(body, key_start, key_end)) {
+            return "";
+        }
+        const bool key_matches = key_end == key_start + key.size() + 2 &&
+                                 body.compare(key_start + 1, key.size(), key) == 0;
+        pos = key_end;
+        skipWhitespace(body, pos);
+        if (pos >= body.size() || body[pos] != ':') {
+            return "";
+        }
+        ++pos;
+        skipWhitespace(body, pos);
+        const std::size_t value_start = pos;
+        std::size_t value_end = 0;
+        if (!scanJsonValueEnd(body, value_start, value_end)) {
+            return "";
+        }
+        if (key_matches) {
+            return body.substr(value_start, value_end - value_start);
+        }
+        pos = value_end;
+        skipWhitespace(body, pos);
+        if (pos < body.size() && body[pos] == ',') {
+            ++pos;
+            continue;
+        }
+        if (pos < body.size() && body[pos] == '}') {
+            return "";
+        }
+        return "";
+    }
 }
 
 std::string unquote(const std::string& raw) {
@@ -218,6 +470,19 @@ std::string stringMapToJson(const std::map<std::string, std::string>& values) {
     return out.str();
 }
 
+bool isValidJsonObject(const std::string& body) {
+    JsonValidator validator(body);
+    return validator.validObject();
+}
+
+bool hasJsonKey(const std::string& body, const std::string& key) {
+    return !findJsonValueSpan(body, key).empty();
+}
+
+std::string extractJsonRawValue(const std::string& body, const std::string& key) {
+    return findJsonValueSpan(body, key);
+}
+
 std::string extractJsonString(const std::string& body, const std::string& key, const std::string& default_value) {
     const std::string raw = findJsonValueSpan(body, key);
     if (raw.empty()) {
@@ -291,4 +556,3 @@ std::vector<std::string> extractJsonStringArray(const std::string& body, const s
 }
 
 }  // namespace erg
-

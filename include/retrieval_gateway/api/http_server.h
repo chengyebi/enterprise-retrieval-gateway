@@ -12,9 +12,9 @@ class HttpServer {
 public:
     HttpServer(RetrievalGateway& gateway, SupabaseAuthManager supabase_auth = SupabaseAuthManager());
     int serve(uint16_t port);
+    std::string handleRequest(const std::string& request_text);
 
 private:
-    std::string handleRequest(const std::string& request_text);
     RetrievalGateway& gateway_;
     SupabaseAuthManager supabase_auth_;
 };

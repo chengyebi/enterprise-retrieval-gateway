@@ -15,6 +15,7 @@
 #include "retrieval_gateway/backend/opensearch_http_client.h"
 #include "retrieval_gateway/common/demo_data.h"
 #include "retrieval_gateway/common/json_util.h"
+#include "retrieval_gateway/common/parse_util.h"
 #include "retrieval_gateway/indexing/incremental_indexer.h"
 #include "retrieval_gateway/metrics/query_metrics_recorder.h"
 #include "retrieval_gateway/search/retrieval_gateway.h"
@@ -181,9 +182,7 @@ void runDemo(RetrievalGateway& gateway) {
     std::cout << metricsToJson(gateway.metrics()) << "\n";
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+int run(int argc, char** argv) {
     const std::string command = commandName(argc, argv);
     if (command.empty()) {
         printUsage();
@@ -202,7 +201,10 @@ int main(int argc, char** argv) {
         SearchRequest request;
         request.user_id = flagValue(argc, argv, "--user", "backend-user-01");
         request.query = flagValue(argc, argv, "--query", "");
-        request.top_k = static_cast<std::size_t>(std::stoull(flagValue(argc, argv, "--top-k", "10")));
+        request.top_k = parseBoundedSize(flagValue(argc, argv, "--top-k", std::to_string(kDefaultTopK)),
+                                         "--top-k",
+                                         1,
+                                         kMaxTopK);
         const std::string project = flagValue(argc, argv, "--project", "");
         const std::string type = flagValue(argc, argv, "--type", "");
         if (!project.empty()) {
@@ -222,7 +224,8 @@ int main(int argc, char** argv) {
     }
 
     if (command == "serve") {
-        const auto port = static_cast<uint16_t>(std::stoul(flagValue(argc, argv, "--port", "8080")));
+        const auto port_value = parseBoundedSize(flagValue(argc, argv, "--port", "8080"), "--port", 1, 65535);
+        const auto port = static_cast<uint16_t>(port_value);
         const SupabaseAuthSettingsInput auth_input = supabaseAuthSettings(argc, argv);
         SupabaseAuthBindings bindings;
         if (!auth_input.bindings_file.empty()) {
@@ -243,4 +246,15 @@ int main(int argc, char** argv) {
 
     printUsage();
     return 1;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "error: " << error.what() << "\n";
+        return 1;
+    }
 }

@@ -1,6 +1,7 @@
 #include "retrieval_gateway/search/retrieval_gateway.h"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <utility>
 
@@ -11,10 +12,16 @@ namespace erg {
 namespace {
 
 std::size_t clampTopK(std::size_t top_k) {
-    if (top_k == 0) {
-        return 10;
+    return std::min<std::size_t>(top_k, kMaxTopK);
+}
+
+bool isBlank(const std::string& value) {
+    for (const unsigned char c : value) {
+        if (!std::isspace(c)) {
+            return false;
+        }
     }
-    return std::min<std::size_t>(top_k, 50);
+    return true;
 }
 
 }  // namespace
@@ -35,19 +42,29 @@ RetrievalGateway::RetrievalGateway(AccessPolicyResolver resolver,
 
 SearchResponse RetrievalGateway::search(const SearchRequest& original_request) {
     Stopwatch total_watch;
-    SearchRequest request = original_request;
-    request.top_k = clampTopK(request.top_k);
 
     SearchResponse response;
     response.query_id = nextQueryId();
-    response.final_candidate_limit = request.top_k;
 
     SearchTrace trace;
     trace.query_id = response.query_id;
-    trace.user_id = request.user_id;
-    trace.requested_top_k = request.top_k;
+    trace.user_id = original_request.user_id;
+    trace.requested_top_k = original_request.top_k;
 
-    if (request.query.empty()) {
+    if (original_request.top_k == 0) {
+        response.ok = false;
+        response.error = "top_k must be greater than 0";
+        trace.total_latency_ms = total_watch.elapsedMs();
+        metrics_.record(trace);
+        return response;
+    }
+
+    SearchRequest request = original_request;
+    request.top_k = clampTopK(request.top_k);
+    response.final_candidate_limit = request.top_k;
+
+    // API 层会先校验，这里保留核心调用的兜底防线。
+    if (isBlank(request.query)) {
         response.ok = false;
         response.error = "query must not be empty";
         trace.total_latency_ms = total_watch.elapsedMs();

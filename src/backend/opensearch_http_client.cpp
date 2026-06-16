@@ -459,6 +459,15 @@ OpenSearchHttpClient::OpenSearchHttpClient(OpenSearchOptions options)
     }
 }
 
+bool OpenSearchHttpClient::isAvailable() const {
+    try {
+        const auto response = request("GET", "/");
+        return isHttpSuccess(response.status);
+    } catch (...) {
+        return false;
+    }
+}
+
 BulkResult OpenSearchHttpClient::bulkUpsert(const std::vector<DocumentChunk>& chunks) {
     BulkResult result;
     if (chunks.empty()) {
